@@ -61,10 +61,12 @@ module counter (
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             count_r <= 8'd0;
-        end else if (load) begin
-            count_r <= data_in;
         end else begin
-            count_r <= count_r + 8'd1;
+            if (load) begin
+                count_r <= data_in;
+            end else begin
+                count_r <= count_r + 8'd1;
+            end
         end
     end
 
