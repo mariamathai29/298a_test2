@@ -3,63 +3,119 @@
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, RisingEdge, ReadOnly
-
-
-async def clock_and_settle(dut):
-    """Wait for one active clock edge, then let combinational outputs settle."""
-    await RisingEdge(dut.clk)
-    await ReadOnly()
+from cocotb.triggers import RisingEdge, Timer
 
 
 @cocotb.test()
 async def test_project(dut):
+
     dut._log.info("Start 8-bit counter test")
 
-    # 100 kHz clock, matching the original Tiny Tapeout example test setup.
+    # Start clock: 10 us period
     clock = Clock(dut.clk, 10, unit="us")
     cocotb.start_soon(clock.start())
 
-    # Initial inputs: load=0, oe=0, bidirectional bus used as an input.
+    # Initial values
     dut.ena.value = 1
     dut.ui_in.value = 0
     dut.uio_in.value = 0
 
-    # Active-low asynchronous reset.
+    # -------------------------------------------------
+    # RESET
+    # -------------------------------------------------
+
+    dut._log.info("Testing reset")
+
     dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 2)
+
+    await RisingEdge(dut.clk)
+    await Timer(1, unit="ns")
+
     assert dut.uo_out.value == 0
+
     dut.rst_n.value = 1
 
-    # Counter increments when load is low.
-    await clock_and_settle(dut)
+
+    # -------------------------------------------------
+    # NORMAL COUNTING
+    # -------------------------------------------------
+
+    dut._log.info("Testing counting")
+
+    await RisingEdge(dut.clk)
+    await Timer(1, unit="ns")
+
     assert dut.uo_out.value == 1
-    await clock_and_settle(dut)
+
+    await RisingEdge(dut.clk)
+    await Timer(1, unit="ns")
+
     assert dut.uo_out.value == 2
 
-    # Synchronously load an 8-bit value from the bidirectional bus.
+
+    # -------------------------------------------------
+    # SYNCHRONOUS LOAD
+    # -------------------------------------------------
+
+    dut._log.info("Testing synchronous load")
+
+    # Put 42 on bidirectional input bus.
     dut.uio_in.value = 42
-    dut.ui_in.value = 0b00000001  # load=1, oe=0
-    await clock_and_settle(dut)
+
+    # ui_in[0] = load
+    # ui_in[1] = oe
+    #
+    # load = 1
+    # oe   = 0
+    dut.ui_in.value = 0b00000001
+
+    await RisingEdge(dut.clk)
+    await Timer(1, unit="ns")
+
     assert dut.uo_out.value == 42
 
-    # Disable load and verify counting resumes.
+
+    # -------------------------------------------------
+    # RESUME COUNTING
+    # -------------------------------------------------
+
+    dut._log.info("Testing count after load")
+
+    # load = 0
+    # oe   = 0
     dut.ui_in.value = 0
-    await clock_and_settle(dut)
+
+    await RisingEdge(dut.clk)
+    await Timer(1, unit="ns")
+
     assert dut.uo_out.value == 43
 
-    # oe=0: all bidirectional pins are inputs (high-Z from this design).
+
+    # -------------------------------------------------
+    # OUTPUT ENABLE / TRI-STATE
+    # -------------------------------------------------
+
+    dut._log.info("Testing output enable")
+
+    # oe = 0 -> uio pins should not be driven
     assert dut.uio_oe.value == 0x00
 
-    # oe=1: all bidirectional pins drive the current counter value.
+    # Turn OE on:
+    # load = 0
+    # oe   = 1
     dut.ui_in.value = 0b00000010
-    await ReadOnly()
+
+    await Timer(1, unit="ns")
+
     assert dut.uio_oe.value == 0xFF
     assert dut.uio_out.value == 43
 
-    # Turn output enable back off and verify the bus returns to input mode.
+
+    # Turn OE back off
     dut.ui_in.value = 0
-    await ReadOnly()
+
+    await Timer(1, unit="ns")
+
     assert dut.uio_oe.value == 0x00
 
-    dut._log.info("Counter reset/count/load/output-enable tests passed")
+    dut._log.info("All counter tests passed!")
