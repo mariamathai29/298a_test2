@@ -5,7 +5,7 @@
 
 `default_nettype none
 
-module counter (
+module tt_um_example (
 
     input load,
     input rst,
