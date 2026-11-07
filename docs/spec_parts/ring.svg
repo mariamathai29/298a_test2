@@ -1,0 +1,49 @@
+<svg viewBox="0 0 980 170" role="img" aria-label="Ring rotation over four cycles: position 0 holds tap 0, then tap 1, tap 2, tap 3, then back to tap 0.">
+  <g font-size="12" text-anchor="middle">
+    <text x="90" y="20" class="t2">cycle t</text>
+    <text x="300" y="20" class="t2">t + 1</text>
+    <text x="510" y="20" class="t2">t + 2</text>
+    <text x="720" y="20" class="t2">t + 3</text>
+    <text x="910" y="20" class="t2">t + 4</text>
+  </g>
+  <g font-size="12" text-anchor="middle">
+    <!-- columns of 4 slots; position 0 at top -->
+    <g transform="translate(40,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x0 · w0</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x1 · w1</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x2 · w2</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x3 · w3</text>
+    </g>
+    <g transform="translate(250,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x1 · w1</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x2 · w2</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x3 · w3</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x0 · w0′</text>
+    </g>
+    <g transform="translate(460,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x2 · w2</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x3 · w3</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x0 · w0′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x1 · w1′</text>
+    </g>
+    <g transform="translate(670,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x3 · w3</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x0 · w0′</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x1 · w1′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x2 · w2′</text>
+    </g>
+    <g transform="translate(860,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x0 · w0′</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x1 · w1′</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x2 · w2′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x3 · w3′</text>
+    </g>
+  </g>
+  <g class="wire">
+    <line x1="146" y1="88" x2="244" y2="88" marker-end="url(#ar)"/>
+    <line x1="356" y1="88" x2="454" y2="88" marker-end="url(#ar)"/>
+    <line x1="566" y1="88" x2="664" y2="88" marker-end="url(#ar)"/>
+    <line x1="776" y1="88" x2="854" y2="88" marker-end="url(#ar)"/>
+  </g>
+  <text x="490" y="164" font-size="12" text-anchor="middle" class="t2">Blue = position 0, the only slot the datapath reads. During UPD, w′ is the updated weight written back at position 3. The same rotation serves MAC, UPD and readout.</text>
+</svg>

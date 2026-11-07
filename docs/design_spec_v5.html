@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4-tap Sign-Sign LMS Adaptive Filter, v5: architecture and design specification</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface-1:   #fcfcfb;
+    --surface-2:   #f0efec;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:        #e1e0d9;
+    --axis:        #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --series-1:    #2a78d6;
+    --series-1-hi: #1c5cab;
+    --wash-1:      rgba(42,120,214,0.10);
+    --wash-2:      rgba(235,104,52,0.12);
+    --accent-2:    #eb6834;
+    --good:        #0ca30c;
+    --good-text:   #006300;
+    --critical:    #d03b3b;
+    --warning:     #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface-1:   #1a1a19;
+      --surface-2:   #383835;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:        #2c2c2a;
+      --axis:        #383835;
+      --border:      rgba(255,255,255,0.10);
+      --series-1:    #3987e5;
+      --series-1-hi: #86b6ef;
+      --wash-1:      rgba(57,135,229,0.16);
+      --wash-2:      rgba(217,89,38,0.18);
+      --accent-2:    #d95926;
+      --good-text:   #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:        #0d0d0d;
+    --surface-1:   #1a1a19;
+    --surface-2:   #383835;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:        #2c2c2a;
+    --axis:        #383835;
+    --border:      rgba(255,255,255,0.10);
+    --series-1:    #3987e5;
+    --series-1-hi: #86b6ef;
+    --wash-1:      rgba(57,135,229,0.16);
+    --wash-2:      rgba(217,89,38,0.18);
+    --accent-2:    #d95926;
+    --good-text:   #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 20px; margin: 44px 0 10px; padding-top: 10px; border-top: 1px solid var(--grid); }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  p, li { color: var(--text-secondary); }
+  p strong, li strong, td strong { color: var(--text-primary); }
+  .sub { color: var(--text-muted); margin: 0 0 20px; }
+  code { font: 13px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+         background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text-primary); }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+  .toggle { position: absolute; top: 18px; right: 24px; }
+  .toggle button { font: inherit; font-size: 13px; color: var(--text-secondary); background: var(--surface-1);
+                   border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+
+  /* Status row */
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 18px 0 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tile .k { font-size: 13px; color: var(--text-muted); }
+  .tile .v { font-size: 24px; font-weight: 600; margin: 2px 0; }
+  .tile .d { font-size: 13px; color: var(--text-secondary); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .badge .ic { width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center;
+               color: #fff; font-size: 11px; line-height: 1; }
+  .ic.ok { background: var(--good); } .ic.bad { background: var(--critical); } .ic.warn { background: var(--warning); color: #0b0b0b; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface-1);
+          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { font-weight: 600; color: var(--text-secondary); background: var(--surface-2); font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td { color: var(--text-secondary); }
+  td:first-child { color: var(--text-primary); }
+
+  figure { margin: 16px 0; }
+  figcaption { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--text-primary); }
+  svg .t2 { fill: var(--text-secondary); }
+  svg .tm { fill: var(--text-muted); }
+  svg .box { fill: var(--surface-1); stroke: var(--axis); stroke-width: 1.5; }
+  svg .box-core { fill: var(--wash-1); stroke: var(--series-1); stroke-width: 1.5; }
+  svg .box-sclk { fill: var(--wash-2); stroke: var(--accent-2); stroke-width: 1.5; }
+  svg .wire { stroke: var(--text-secondary); stroke-width: 1.5; fill: none; }
+  svg .wire-hot { stroke: var(--series-1); stroke-width: 2; fill: none; }
+  svg .domain { fill: none; stroke: var(--axis); stroke-width: 1; stroke-dasharray: 5 4; }
+  svg .grid { stroke: var(--grid); stroke-width: 1; }
+
+  /* Chart */
+  .chart-wrap { position: relative; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+             border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+             opacity: 0; transition: opacity .08s; min-width: 190px; }
+  .tooltip .tv { font-weight: 700; font-size: 15px; color: var(--text-primary); }
+  .tooltip .tl { color: var(--text-secondary); }
+  .bar-hit { fill: transparent; cursor: default; }
+  .bar-hit:focus { outline: none; }
+  .bar { fill: var(--series-1); }
+  .bar.hot { fill: var(--series-1-hi); }
+  .viewtoggle { margin: 6px 0 0; }
+  .viewtoggle button { font: inherit; font-size: 13px; color: var(--text-secondary); background: none;
+                       border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+  .legend-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); margin-right: 14px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .ok-text { color: var(--good-text); font-weight: 600; }
+  .note { font-size: 13px; color: var(--text-muted); }
+  ol li, ul li { margin: 3px 0; }
+
+  /* v5 additions */
+  :root { --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; } }
+  :root[data-theme="dark"] { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; }
+  .toc ol { columns: 2; margin: 6px 0 0; padding-left: 20px; }
+  .toc a { color: var(--series-1); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  a { color: var(--series-1); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 6px; font-size: 13px; color: var(--text-secondary); }
+  .legend .li { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .ln { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+  .legend .ln.dash { border-top-style: dashed; }
+  svg .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  svg .ref { fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  svg .xhair { stroke: var(--axis); stroke-width: 1; }
+  svg .dot { stroke: var(--surface-1); stroke-width: 2; }
+  svg .wf { fill: none; stroke: var(--text-primary); stroke-width: 1.5; }
+  svg .wf-bus { fill: var(--wash-1); stroke: var(--series-1); stroke-width: 1.2; }
+  svg .wf-bus2 { fill: var(--wash-2); stroke: var(--accent-2); stroke-width: 1.2; }
+  .tm { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="toggle"><button id="themeBtn" type="button">Toggle dark / light</button></div>
+<main>
+
+<h1>4-tap sign-sign LMS adaptive filter: architecture and design specification (v5)</h1>
+<p class="sub">ECE298A · Tiny Tapeout GF26c (GF180MCU D), one 1x1 tile · Author: Maria Mathai ·
+Prototype in <code>~/dataa/tt/assess4d</code> · Signoff run <code>runs/r18</code> · LibreLane 3.0.14 · 2026-10-14</p>
+
+<div class="status">
+  <div class="tile"><div class="k">Adaptive filtering (RTL, gate level, SDF timing)</div><div class="v">Converges</div>
+    <div class="d"><span class="badge"><span class="ic ok">✓</span>Weights within 1 LSB of the plant; e 31 dB below r</span></div></div>
+  <div class="tile"><div class="k">Fits one GF180 tile</div><div class="v">87.4% full</div>
+    <div class="d"><span class="badge"><span class="ic ok">✓</span>GDS built, DRC 0, LVS 0, antenna 0</span></div></div>
+  <div class="tile"><div class="k">Timing at 40 MHz, all 9 corners</div><div class="v">+3.02 ns worst</div>
+    <div class="d"><span class="badge"><span class="ic ok">✓</span>Setup and hold met, TT I/O modelled</span></div></div>
+  <div class="tile"><div class="k">Throughput / latency</div><div class="v">1.54 MS/s</div>
+    <div class="d">Core limit 1.74 MS/s · u → y about 1.26 µs</div></div>
+</div>
+
+<nav class="card toc">
+<strong>Contents</strong>
+<ol>
+<li><a href="#spec">Operating specification</a></li>
+<li><a href="#func">Function and number formats</a></li>
+<li><a href="#pins">Pins</a></li>
+<li><a href="#if">Interfaces and host protocol</a></li>
+<li><a href="#arch">Architecture</a></li>
+<li><a href="#step">One step, cycle by cycle</a></li>
+<li><a href="#cdc">Clock-domain crossing</a></li>
+<li><a href="#timing">Timing closure and signoff</a></li>
+<li><a href="#phys">Physical implementation</a></li>
+<li><a href="#dv">Verification</a></li>
+<li><a href="#limits">Limitations and open items</a></li>
+<li><a href="#repro">Files and how to reproduce</a></li>
+</ol>
+</nav>
+
+<!-- ===================================================================== -->
+<h2 id="spec">1. Operating specification</h2>
+<p>The design was built against a 50 MHz target, where the slow corner misses by 1.9 ns, and is <strong>specified at 40 MHz</strong>,
+where every corner passes with margin. Building at a lower target doesn't help: the resizer relaxes and the result is worse
+(builds at 44 and 46 MHz came out at −1.7 and −2.2 ns). So the flow keeps the 50 MHz place-and-route constraint and signs off at the spec.</p>
+<table>
+<tr><th>Parameter</th><th class="n">Min</th><th class="n">Typ</th><th class="n">Max</th><th>Unit</th><th>Notes</th></tr>
+<tr><td><code>clk</code> frequency</td><td class="n">—</td><td class="n">40</td><td class="n">40</td><td>MHz</td><td>Signoff spec. Absolute limit 45.4 MHz at the slow corner with no margin</td></tr>
+<tr><td><code>SCLK_IN</code> frequency</td><td class="n">—</td><td class="n">20</td><td class="n">20</td><td>MHz</td><td>Asynchronous to <code>clk</code>; any phase or small frequency offset</td></tr>
+<tr><td><code>SCLK_IN</code> duty cycle</td><td class="n">45</td><td class="n">50</td><td class="n">55</td><td>%</td><td>Data is launched on the falling edge and sampled on the rising edge</td></tr>
+<tr><td><code>SCLK_OUT</code> frequency</td><td class="n" colspan="3" style="text-align:center">clk ÷ 2 = 20</td><td>MHz</td><td>Driven by the chip; idles low between frames</td></tr>
+<tr><td>Sample spacing</td><td class="n">23</td><td class="n">26</td><td class="n">—</td><td>clk</td><td>23 = one core step. Spec: 13 SCLK_IN periods (8 data + 5 with CS_IN high)</td></tr>
+<tr><td>Sample rate</td><td class="n">—</td><td class="n">1.538</td><td class="n">1.739</td><td>MS/s</td><td>Typ at the spec; max = 40 MHz ÷ 23 with host-synchronous SCLK</td></tr>
+<tr><td>u → y latency</td><td class="n" colspan="3" style="text-align:center">≈ 1.26</td><td>µs</td><td>First input bit to last output bit; 0.9 µs from the last input bit</td></tr>
+<tr><td>Power (typical corner)</td><td class="n">—</td><td class="n">6.1</td><td class="n">—</td><td>mW</td><td>At 40 MHz with the tool's default switching activity: a rough figure</td></tr>
+<tr><td>Supply / corners signed off</td><td class="n" colspan="3" style="text-align:center">3.0 – 3.6 V</td><td></td><td>−40 °C to 125 °C, ss / tt / ff, min / nom / max RC: 9 corners</td></tr>
+</table>
+<p class="note">Margins at the spec are in <a href="#timing">section 8</a>. The I/O figures assume the Tiny Tapeout GF180 pad and mux model described there.</p>
+
+<!-- ===================================================================== -->
+<h2 id="func">2. Function and number formats</h2>
+<p>A 4-tap FIR filter whose weights adapt by <strong>sign-sign LMS</strong>. The reference <code>u</code> feeds the FIR;
+<code>r</code> is the desired input. The chip returns <code>y</code> (the filter output) and <code>e = r − y</code> (the error).
+Two uses share the same datapath:</p>
+<ul>
+<li><strong>Interference cancellation:</strong> <code>r</code> = signal + interference correlated with <code>u</code>; <code>e</code> is the cleaned signal.</li>
+<li><strong>System identification:</strong> <code>r</code> is an unknown system's response to <code>u</code>; the weights converge to that system's impulse response and are read out over the debug path.</li>
+</ul>
+<div class="card">
+<p style="margin:0"><strong>Per sample n</strong>, for k = 0..3:</p>
+<p style="margin:6px 0 0"><code>y[n] = sat8( round( Σ x[n−k] · w[k] ) )</code> &nbsp;&nbsp;
+<code>e[n] = sat8( r[n] − y[n] )</code> &nbsp;&nbsp;
+<code>w[k] ← sat14( w[k] + μ · sign(e[n]) · sign(x[n−k]) )</code></p>
+<p class="note" style="margin:8px 0 0">sign(0) = 0; sign(e) comes from the exact 9-bit r − y, before saturation. The update uses the same
+x vector that produced y[n]. μ = 2<sup>mu_sel</sup> weight-register LSBs = 2<sup>mu_sel − 12</sup>. The FIR multiplies by the top 10 bits of each weight.</p>
+</div>
+<table>
+<tr><th>Signal</th><th class="n">Bits</th><th>Format</th><th>Notes</th></tr>
+<tr><td>u, r, y, e</td><td class="n">8</td><td>signed Q1.7</td><td>y and e saturate to [−1, 1 − 2<sup>−7</sup>]</td></tr>
+<tr><td>Weight register</td><td class="n">14</td><td>signed Q2.12</td><td>Range [−2, 2); saturating; the 4 extra LSBs allow μ down to 2<sup>−12</sup></td></tr>
+<tr><td>Weight used by the FIR</td><td class="n">10</td><td>signed Q2.8</td><td>Top 10 bits (truncated)</td></tr>
+<tr><td>Booth partial product</td><td class="n">12</td><td>signed</td><td>0, ±1 or ±2 × the 10-bit weight</td></tr>
+<tr><td>Accumulator</td><td class="n">20</td><td>signed Q5.15</td><td>Starts at the rounding constant; cannot overflow</td></tr>
+<tr><td>Internal error r − y</td><td class="n">9</td><td>signed Q2.7</td><td>Exact; its sign drives the update</td></tr>
+<tr><td>Readout weight</td><td class="n">8</td><td>signed Q2.6</td><td>Top 8 bits of the weight register (LSB = 1/64)</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="pins">3. Pins</h2>
+<table>
+<tr><th>Pin</th><th>Name</th><th>Dir</th><th>Description</th></tr>
+<tr><td><code>clk</code></td><td>clk</td><td>in</td><td>40 MHz system clock</td></tr>
+<tr><td><code>rst_n</code></td><td>rst_n</td><td>in</td><td>Reset, active low. Asynchronous assert, synchronous release in the clk domain. Clears weights, taps and flags</td></tr>
+<tr><td><code>ui_in[0]</code></td><td>SCLK_IN</td><td>in</td><td>20 MHz input-port clock from the host (SPI mode 0)</td></tr>
+<tr><td><code>ui_in[1]</code></td><td>CS_IN</td><td>in</td><td>Chip select, active low. High clears the bit counter, discarding a partial frame</td></tr>
+<tr><td><code>ui_in[2]</code></td><td>MOSI_u_in</td><td>in</td><td>Reference u, 8-bit Q1.7, MSB first</td></tr>
+<tr><td><code>ui_in[4]</code></td><td>MOSI_r_in</td><td>in</td><td>Desired r, 8-bit Q1.7, MSB first, in the same frame as u</td></tr>
+<tr><td><code>ui_in[7]</code></td><td>debug_i1</td><td>in</td><td>Rising edge while adapt_en = 0: read out weights and taps</td></tr>
+<tr><td><code>uo_out[0]</code></td><td>SCLK_OUT</td><td>out</td><td>Output-port clock, clk ÷ 2</td></tr>
+<tr><td><code>uo_out[1]</code></td><td>FS_OUT</td><td>out</td><td>Frame sync, high for the first bit of each frame</td></tr>
+<tr><td><code>uo_out[2]</code></td><td>MOSI_y_out</td><td>out</td><td>y (Q1.7); during readout, weight k (Q2.6)</td></tr>
+<tr><td><code>uo_out[3]</code></td><td>MOSI_e_out</td><td>out</td><td>e (Q1.7); during readout, tap k</td></tr>
+<tr><td><code>uo_out[6]</code></td><td>debug_o1</td><td>out</td><td>Sticky overrun: a sample arrived while a step or readout was busy and was dropped</td></tr>
+<tr><td><code>uo_out[7]</code></td><td>debug_o2</td><td>out</td><td>Sticky saturation of y, e or a weight</td></tr>
+<tr><td><code>uio[0]</code></td><td>adapt_en</td><td>in</td><td>1 = weights adapt; 0 = frozen (the filter still runs)</td></tr>
+<tr><td><code>uio[3:1]</code></td><td>mu_sel</td><td>in</td><td>Step size μ = 2<sup>mu_sel − 12</sup> (0 → 2<sup>−12</sup> … 7 → 2<sup>−5</sup>)</td></tr>
+<tr><td colspan="4" class="note">Unused: <code>ui_in[3,5,6]</code>, <code>uo_out[4,5]</code> (driven low), <code>uio[7:4]</code>, <code>ena</code>. All <code>uio</code> pins are inputs (<code>uio_oe = 0</code>).</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="if">4. Interfaces and host protocol</h2>
+<h3>Input port: SPI slave, mode 0</h3>
+<p>The host sends u and r together on two lanes, MSB first, with CS_IN low. It changes data on the falling SCLK_IN edge and the chip samples on the rising edge.
+After the 8th rising edge both words move into holding registers and one filter step starts.
+CS_IN must then go high (or SCLK_IN stop) long enough that consecutive samples are <strong>at least 23 clk apart</strong>.
+The spec uses 13 SCLK_IN periods per sample: 8 data bits plus 5 with CS_IN high.</p>
+<figure class="card">
+<svg viewBox="0 0 980 200" role="img" aria-label="Input frame waveform: SCLK_IN runs continuously; CS_IN is low for 8 periods, during which MOSI_u and MOSI_r carry bits 7 down to 0, changing on falling SCLK edges; then CS_IN is high for 5 periods.">
+  <g id="wfIn"></g>
+</svg>
+<figcaption>One sample at the spec: 13 SCLK_IN periods = 650 ns = 26 clk. The step starts 2–3 clk after the 8th rising edge (toggle synchroniser).</figcaption>
+</figure>
+
+<h3>Output port: frame-sync serial master</h3>
+<p>Each step produces one 8-bit frame carrying y and e on two lanes, MSB first. The chip drives SCLK_OUT = clk ÷ 2.
+FS_OUT is high for the first bit. Data changes on the falling SCLK_OUT edge, and the receiver samples on the rising edge, a full clk period (25 ns) later.
+Between frames SCLK_OUT and FS_OUT idle low. A frame takes 16 clk, so it always finishes before the next step's frame (≥ 23 clk).</p>
+<figure class="card">
+<svg viewBox="0 0 980 170" role="img" aria-label="Output frame waveform: SCLK_OUT pulses 8 times; FS_OUT is high during the first bit; MOSI_y_out and MOSI_e_out carry bits 7 to 0, changing on falling SCLK_OUT edges.">
+  <g id="wfOut"></g>
+</svg>
+<figcaption>Receiver: sample MOSI_y_out and MOSI_e_out on rising SCLK_OUT; a rising edge with FS_OUT high is bit 7 of a new frame.</figcaption>
+</figure>
+
+<h3>Interface timing (at the pins, from signoff STA plus the I/O model)</h3>
+<table>
+<tr><th>Parameter</th><th class="n">Requirement / value</th><th class="n">Worst margin</th><th>Corner</th></tr>
+<tr><td>SPI in setup: CS_IN / MOSI before rising SCLK_IN</td><td class="n">half period 25 ns − 5.5 ns ext.</td><td class="n">+13.24 ns</td><td><code>max_ss_125C_3v00</code></td></tr>
+<tr><td>SPI in hold: CS_IN / MOSI after rising SCLK_IN</td><td class="n">changes ≥ 25 ns − 5.5 ns later</td><td class="n">+19.88 ns</td><td><code>min_ff_n40C_3v60</code></td></tr>
+<tr><td>SPI out setup at the receiver (vs rising SCLK_OUT)</td><td class="n">t<sub>su</sub> 5 ns + skew 3.5 ns</td><td class="n">+15.82 ns</td><td><code>nom_ss_125C_3v00</code></td></tr>
+<tr><td>SPI out hold at the receiver</td><td class="n">t<sub>h</sub> 2 ns + skew 3.5 ns</td><td class="n">+17.72 ns</td><td><code>max_ss_125C_3v00</code></td></tr>
+<tr><td>SCLK_IN-domain register paths, hold</td><td class="n">—</td><td class="n">+0.24 ns</td><td><code>min_ff_n40C_3v60</code></td></tr>
+<tr><td>CDC: resolution time after first sync stage</td><td class="n">positive slack</td><td class="n">+14.55 ns</td><td><code>max_ss_125C_3v00</code></td></tr>
+</table>
+<p class="note">Margins include ±3.5 ns pin-to-pin pad/mux/board skew, ±2 ns host launch skew, receiver t<sub>su</sub> 5 ns / t<sub>h</sub> 2 ns, 0.25 ns clock uncertainty and ±5% derating. See <a href="#iomodel">the I/O model</a>.</p>
+
+<h3>Host procedure</h3>
+<ol>
+<li><strong>Reset:</strong> hold <code>rst_n</code> low for at least 4 clk with <code>CS_IN</code> high, then release it. The SCLK_IN-domain counter is cleared by <code>rst_n</code> or CS_IN, so CS_IN must be high when <code>rst_n</code> rises.</li>
+<li><strong>Configure:</strong> set <code>adapt_en</code> and <code>mu_sel</code>. They pass through 2-flop synchronisers. Change <code>mu_sel</code> between samples, or while <code>adapt_en</code> = 0, so that one sample can't see a mix of old and new bits.</li>
+<li><strong>Stream:</strong> send frames at ≥ 23 clk spacing (spec: 26). Each one returns a y/e frame about 0.9 µs after its last bit.</li>
+<li><strong>Read the weights:</strong> set <code>adapt_en</code> = 0, wait for the last y/e frame, then raise <code>debug_i1</code>. Four frames follow (weight k on the y lane, tap k on the e lane, k = 0..3), 20 clk apart. Samples sent during the 80 clk readout are dropped and set <code>debug_o1</code>. Set <code>adapt_en</code> = 1 again to resume.</li>
+<li><strong>Flags:</strong> <code>debug_o1</code> (overrun) and <code>debug_o2</code> (saturation) are sticky until reset.</li>
+</ol>
+
+<!-- ===================================================================== -->
+<h2 id="arch">5. Architecture</h2>
+<figure class="card">
+<svg viewBox="0 0 980 480" role="img" aria-label="Block diagram: SCLK_IN domain with shift and holding registers, toggle synchroniser into the clk domain core with tap and weight rings, Booth partial product register, accumulator, finish and update units, replicated control flops and the output serialiser.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--text-secondary)"/></marker>
+    <marker id="arh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--series-1)"/></marker>
+  </defs>
+  <rect class="domain" x="8" y="30" width="250" height="300" rx="10"/>
+  <text x="20" y="22" class="t2" font-size="13" font-weight="600">SCLK_IN domain (20 MHz)</text>
+  <rect class="domain" x="300" y="30" width="672" height="440" rx="10"/>
+  <text x="312" y="22" class="t2" font-size="13" font-weight="600">clk domain (40 MHz)</text>
+
+  <text x="16" y="66" font-size="12" class="t2">MOSI_u</text>
+  <text x="16" y="136" font-size="12" class="t2">MOSI_r</text>
+  <text x="16" y="218" font-size="12" class="t2">SCLK_IN</text>
+  <text x="16" y="250" font-size="12" class="t2">CS_IN</text>
+  <rect class="box-sclk" x="70" y="55" width="80" height="38" rx="6"/><text x="110" y="72" font-size="12" text-anchor="middle">shift u</text><text x="110" y="87" font-size="11" text-anchor="middle" class="t2">7 bits</text>
+  <rect class="box-sclk" x="70" y="125" width="80" height="38" rx="6"/><text x="110" y="142" font-size="12" text-anchor="middle">shift r</text><text x="110" y="157" font-size="11" text-anchor="middle" class="t2">7 bits</text>
+  <rect class="box-sclk" x="168" y="55" width="80" height="38" rx="6"/><text x="208" y="72" font-size="12" text-anchor="middle">hold u</text><text x="208" y="87" font-size="11" text-anchor="middle" class="t2">8 bits</text>
+  <rect class="box-sclk" x="168" y="125" width="80" height="38" rx="6"/><text x="208" y="142" font-size="12" text-anchor="middle">hold r</text><text x="208" y="157" font-size="11" text-anchor="middle" class="t2">8 bits</text>
+  <rect class="box-sclk" x="96" y="200" width="152" height="52" rx="6"/><text x="172" y="221" font-size="12" text-anchor="middle">bit counter</text><text x="172" y="238" font-size="11" text-anchor="middle" class="t2">8th bit: load, flip d_tog</text>
+  <line class="wire" x1="16" y1="224" x2="94" y2="224" marker-end="url(#ar)"/>
+  <line class="wire" x1="16" y1="234" x2="94" y2="234" marker-end="url(#ar)"/>
+  <line class="wire" x1="16" y1="74" x2="68" y2="74" marker-end="url(#ar)"/>
+  <line class="wire" x1="16" y1="144" x2="68" y2="144" marker-end="url(#ar)"/>
+  <line class="wire" x1="150" y1="74" x2="166" y2="74" marker-end="url(#ar)"/>
+  <line class="wire" x1="150" y1="144" x2="166" y2="144" marker-end="url(#ar)"/>
+
+  <rect class="box" x="272" y="270" width="140" height="52" rx="6"/>
+  <text x="342" y="291" font-size="12" text-anchor="middle">toggle sync</text><text x="342" y="308" font-size="11" text-anchor="middle" class="t2">3 flops → d_pre, d_stb</text>
+  <path class="wire" d="M248 226 L262 226 L262 296 L270 296" marker-end="url(#ar)"/>
+  <text x="312" y="462" font-size="11" class="tm">uio[3:0], ui_in[7] → 2-flop synchronisers → adapt_en, mu_sel, readout trigger · rst_n → reset synchroniser</text>
+
+  <path class="wire" d="M248 74 L330 74" marker-end="url(#ar)"/>
+  <path class="wire" d="M248 144 L290 144 L290 186 L330 186" marker-end="url(#ar)"/>
+  <path class="wire" d="M342 322 L342 338" marker-end="url(#ar)"/>
+
+  <rect class="box-core" x="332" y="48" width="230" height="62" rx="8"/>
+  <text x="344" y="66" font-size="12" font-weight="600">tap ring x</text>
+  <text x="440" y="66" font-size="11" class="t2">4 × 8 bits, 2 halves</text>
+  <g font-size="11" text-anchor="middle">
+    <rect class="box" x="346" y="74" width="46" height="26" rx="4"/><text x="369" y="91">x[0]</text>
+    <rect class="box" x="400" y="74" width="46" height="26" rx="4"/><text x="423" y="91">x[1]</text>
+    <rect class="box" x="454" y="74" width="46" height="26" rx="4"/><text x="477" y="91">x[2]</text>
+    <rect class="box" x="508" y="74" width="46" height="26" rx="4"/><text x="531" y="91">x[3]</text>
+  </g>
+  <rect class="box-core" x="332" y="170" width="100" height="36" rx="6"/><text x="382" y="193" font-size="12" text-anchor="middle">r_q (8)</text>
+
+  <rect class="box-core" x="590" y="48" width="230" height="62" rx="8"/>
+  <text x="602" y="66" font-size="12" font-weight="600">weight ring w</text>
+  <text x="712" y="66" font-size="11" class="t2">4 × 14 bits</text>
+  <g font-size="11" text-anchor="middle">
+    <rect class="box" x="604" y="74" width="46" height="26" rx="4"/><text x="627" y="91">w[0]</text>
+    <rect class="box" x="658" y="74" width="46" height="26" rx="4"/><text x="681" y="91">w[1]</text>
+    <rect class="box" x="712" y="74" width="46" height="26" rx="4"/><text x="735" y="91">w[2]</text>
+    <rect class="box" x="766" y="74" width="46" height="26" rx="4"/><text x="789" y="91">w[3]</text>
+  </g>
+  <path class="wire-hot" d="M369 100 L369 130 L560 130 L560 150" marker-end="url(#arh)"/>
+  <path class="wire-hot" d="M627 100 L627 130 L600 130 L600 150" marker-end="url(#arh)"/>
+  <text x="380" y="124" font-size="11" class="t2">only position 0 is read</text>
+
+  <rect class="box-core" x="466" y="152" width="208" height="54" rx="8"/>
+  <text x="570" y="172" font-size="12" text-anchor="middle" font-weight="600">Booth radix-4 → pp_q</text>
+  <text x="570" y="189" font-size="11" text-anchor="middle" class="t2">digit of x[0] × w[0][13:4], registered</text>
+  <rect class="box-core" x="466" y="226" width="208" height="60" rx="8"/>
+  <text x="570" y="246" font-size="12" text-anchor="middle" font-weight="600">acc (20 bits)</text>
+  <text x="570" y="262" font-size="11" text-anchor="middle" class="t2">acc + pp_q, then ≪2 at group end</text>
+  <text x="570" y="277" font-size="11" text-anchor="middle" class="t2">preloaded with the rounding constant</text>
+  <line class="wire" x1="570" y1="206" x2="570" y2="224" marker-end="url(#ar)"/>
+
+  <rect class="box-core" x="684" y="226" width="176" height="64" rx="8"/>
+  <text x="772" y="246" font-size="12" text-anchor="middle" font-weight="600">FIN (1 clk)</text>
+  <text x="772" y="263" font-size="11" text-anchor="middle" class="t2">y = sat8(acc ≫ 8), e = sat8(r − y)</text>
+  <text x="772" y="279" font-size="11" text-anchor="middle" class="t2">sign(e) by compare, in parallel</text>
+  <line class="wire" x1="674" y1="258" x2="682" y2="258" marker-end="url(#ar)"/>
+  <path class="wire" d="M432 188 L450 188 L450 306 L740 306 L740 292" marker-end="url(#ar)"/>
+  <text x="456" y="302" font-size="11" class="tm">r</text>
+
+  <rect class="box-core" x="684" y="134" width="176" height="72" rx="8"/>
+  <text x="772" y="154" font-size="12" text-anchor="middle" font-weight="600">CUE update (UPD, 4 clk)</text>
+  <text x="772" y="170" font-size="11" text-anchor="middle" class="t2">w0 + μ and w0 − μ in parallel,</text>
+  <text x="772" y="185" font-size="11" text-anchor="middle" class="t2">sign(e)·sign(x) picks one late</text>
+  <text x="772" y="199" font-size="11" text-anchor="middle" class="t2">saturate, write into w[3]</text>
+  <path class="wire" d="M820 226 L820 208" marker-end="url(#ar)"/>
+  <path class="wire-hot" d="M860 168 L888 168 L888 92 L814 92" marker-end="url(#arh)"/>
+
+  <rect class="box-core" x="690" y="350" width="150" height="62" rx="8"/>
+  <text x="765" y="372" font-size="12" text-anchor="middle" font-weight="600">spi_tx (2 lanes)</text>
+  <text x="765" y="389" font-size="11" text-anchor="middle" class="t2">8-bit frames, FS_OUT</text>
+  <text x="765" y="404" font-size="11" text-anchor="middle" class="t2">SCLK_OUT = clk ÷ 2</text>
+  <line class="wire" x1="765" y1="290" x2="765" y2="348" marker-end="url(#ar)"/>
+  <path class="wire" d="M840 381 L900 381" marker-end="url(#ar)"/>
+  <text x="904" y="374" font-size="12" class="t2">y / w</text>
+  <text x="904" y="390" font-size="12" class="t2">e / x</text>
+
+  <rect class="box" x="332" y="340" width="330" height="94" rx="8"/>
+  <text x="497" y="360" font-size="12" text-anchor="middle" font-weight="600">step FSM: IDLE → MAC (17) → FIN → UPD (4)</text>
+  <text x="497" y="377" font-size="11" text-anchor="middle" class="t2">controls decided one cycle early (next-state logic) and registered</text>
+  <text x="497" y="393" font-size="11" text-anchor="middle" class="t2">replicated ctl_ff cells: rotate × 6, step-start × 4</text>
+  <text x="497" y="409" font-size="11" text-anchor="middle" class="t2">readout: 4 slots of 20 clk, one rotation per slot</text>
+  <text x="497" y="425" font-size="11" text-anchor="middle" class="t2">flags → debug_o1 (overrun), debug_o2 (saturation)</text>
+</svg>
+<figcaption>Orange: SCLK_IN domain. Blue: clk-domain datapath. The highlighted wires carry ring traffic: the datapath reads only position 0 of each ring, and the updated weight re-enters at position 3.</figcaption>
+</figure>
+
+<h3>Rotating rings instead of a read mux</h3>
+<p>The taps and weights are <strong>circular shift registers</strong>. Each MAC and UPD cycle uses position 0 and rotates both rings by one,
+so every register bit connects only to its neighbour, and after 4 rotations the rings are back in order. The earlier v3 had one MAC/update unit reaching
+every tap and weight through a 4:1 mux and a write decoder. That needed 168% of Metal3, the tile's only horizontal routing layer, and never routed.
+The rings brought Metal3 down to 45%.</p>
+<figure class="card">
+<svg viewBox="0 0 980 170" role="img" aria-label="Ring rotation over four cycles: position 0 holds tap 0, then tap 1, tap 2, tap 3, then back to tap 0.">
+  <g font-size="12" text-anchor="middle">
+    <text x="90" y="20" class="t2">cycle t</text>
+    <text x="300" y="20" class="t2">t + 1</text>
+    <text x="510" y="20" class="t2">t + 2</text>
+    <text x="720" y="20" class="t2">t + 3</text>
+    <text x="910" y="20" class="t2">t + 4</text>
+  </g>
+  <g font-size="12" text-anchor="middle">
+    <!-- columns of 4 slots; position 0 at top -->
+    <g transform="translate(40,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x0 · w0</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x1 · w1</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x2 · w2</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x3 · w3</text>
+    </g>
+    <g transform="translate(250,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x1 · w1</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x2 · w2</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x3 · w3</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x0 · w0′</text>
+    </g>
+    <g transform="translate(460,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x2 · w2</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x3 · w3</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x0 · w0′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x1 · w1′</text>
+    </g>
+    <g transform="translate(670,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x3 · w3</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x0 · w0′</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x1 · w1′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x2 · w2′</text>
+    </g>
+    <g transform="translate(860,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x0 · w0′</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x1 · w1′</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x2 · w2′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x3 · w3′</text>
+    </g>
+  </g>
+  <g class="wire">
+    <line x1="146" y1="88" x2="244" y2="88" marker-end="url(#ar)"/>
+    <line x1="356" y1="88" x2="454" y2="88" marker-end="url(#ar)"/>
+    <line x1="566" y1="88" x2="664" y2="88" marker-end="url(#ar)"/>
+    <line x1="776" y1="88" x2="854" y2="88" marker-end="url(#ar)"/>
+  </g>
+  <text x="490" y="164" font-size="12" text-anchor="middle" class="t2">Blue = position 0, the only slot the datapath reads. During UPD, w′ is the updated weight written back at position 3. The same rotation serves MAC, UPD and readout.</text>
+</svg>
+
+</figure>
+
+<h3>Horner-order radix-4 Booth multiply</h3>
+<p>Each 8-bit tap splits into four radix-4 Booth digits d<sub>3</sub>..d<sub>0</sub> ∈ {−2, −1, 0, +1, +2}, so x = Σ 4<sup>j</sup>d<sub>j</sub>.
+The MAC runs <strong>digit outer, tap inner</strong>:</p>
+<div class="card"><code>acc = ((S<sub>3</sub>·4 + S<sub>2</sub>)·4 + S<sub>1</sub>)·4 + S<sub>0</sub></code>, &nbsp; where <code>S<sub>j</sub> = Σ<sub>k</sub> d<sub>j</sub>(x[k]) · w[k][13:4]</code></div>
+<p>So <code>acc</code> only ever shifts by a fixed 2 bits (just wiring) at the end of a digit group, and the tap order inside a group is exactly the ring rotation.
+The accumulator starts at 2; Horner scales it by 4<sup>3</sup> to 128 = 2<sup>7</sup>, which is the round-half-up constant for the final ≫ 8. No separate rounding adder is needed.</p>
+
+<h3>What changed from v4 to v5, and why (slow-corner timing)</h3>
+<table>
+<tr><th>Change</th><th>Effect</th></tr>
+<tr><td>Booth partial product registered (<code>pp_q</code>)</td><td>Splits digit select + 12-bit product from the 20-bit add. MAC becomes 17 cycles (16 issue + 1 drain), step 22 → 23 clk</td></tr>
+<tr><td>All ring, accumulator and serialiser controls registered, decided a cycle early from next-state logic</td><td>Controls start at a flop instead of the end of the FSM decode</td></tr>
+<tr><td>Replicated control flops (<code>ctl_ff</code>), instantiated as GF180 cells so Yosys can't merge them</td><td>Each copy drives one ring segment (one 14-bit weight or one 16-bit half of the tap ring) instead of one flop driving ~90 bits across the tile</td></tr>
+<tr><td>Rounding constant preloaded into <code>acc</code>; Horner shift after the adder</td><td>Removes an adder and a mux level from the critical loop</td></tr>
+<tr><td><code>acc</code> and <code>pp_q</code> run every cycle (no enable)</td><td>Removes the enable mux; values outside MAC are never read</td></tr>
+<tr><td>FIN: r − y for all three saturation cases and sign(e) by comparison, in parallel</td><td>FIN fits in one cycle</td></tr>
+<tr><td>UPD: w0 + μ and w0 − μ in parallel with one-hot registered μ; the sign product selects late</td><td>The update's adder no longer waits for sign(e)·sign(x)</td></tr>
+<tr><td>Serialiser loads on a registered pulse, no ready handshake</td><td>Removes a cross-block combinational path</td></tr>
+<tr><td>Post-global-route timing repair (and, in r18, design repair) enabled</td><td>The post-CTS repair works from placement estimates and missed ~3 ns at the slow corner</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="step">6. One step, cycle by cycle</h2>
+<figure class="card">
+<svg viewBox="0 0 980 240" role="img" aria-label="Timeline of one 23-cycle step at 40 MHz: 1 start cycle, 17 MAC cycles in four digit groups plus a drain cycle, 1 FIN cycle, 4 update cycles; the output frame starts after FIN and runs 16 cycles; the next sample at the spec arrives 26 cycles after the previous one.">
+  <g id="stepTl"></g>
+</svg>
+<figcaption>At the spec (26 clk per sample) there are 3 spare clocks per step. The output frame overlaps the next step's MAC, so it never limits throughput.</figcaption>
+</figure>
+<table>
+<tr><th>Phase</th><th class="n">Cycles</th><th>What happens</th></tr>
+<tr><td>Start</td><td class="n">1</td><td><code>go</code> flops high: u shifts into x[0], r into r_q, acc ← 2, pp_q ← 0</td></tr>
+<tr><td>MAC</td><td class="n">17</td><td>Cycles 0–15 form digit d<sub>j</sub>(x[0]) × w[0][13:4] into pp_q and rotate both rings; cycles 1–16 add pp_q into acc; the sums ending digit groups 3, 2, 1 are shifted left by 2</td></tr>
+<tr><td>FIN</td><td class="n">1</td><td>y = sat8(acc[19:8]); e = sat8(r − y); sign(e) captured; adapt_en sampled</td></tr>
+<tr><td>UPD</td><td class="n">4</td><td>w[0] updated (if adapting) as it rotates to position 3; the y/e frame loads on the first UPD cycle</td></tr>
+<tr><td><strong>Step</strong></td><td class="n"><strong>23</strong></td><td>575 ns at 40 MHz. A strobe while a step or readout is busy is dropped and sets debug_o1</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="cdc">7. Clock-domain crossing (no FIFO)</h2>
+<ol>
+<li>On every rising SCLK_IN edge, the u and r lanes shift into 7-bit registers. A 3-bit counter, cleared asynchronously while CS_IN is high, marks the 8th bit.</li>
+<li>On the 8th bit, the full words go into the 8-bit <strong>holding registers</strong> and <code>d_tog</code> flips.</li>
+<li>In the clk domain, <code>d_s[2:0]</code> samples the toggle. <code>d_pre = d_s[1] ⊕ d_s[0]</code> decides the step start one cycle early, and <code>d_stb = d_s[2] ⊕ d_s[1]</code> drives the overrun flag.</li>
+<li>The registered step-start copies (<code>go</code>) copy <code>hold u</code> into the tap ring and <code>hold r</code> into <code>r_q</code>.</li>
+</ol>
+<p><strong>Data stability:</strong> the holding registers change only at the next frame's 8th bit, ≥ 23 clk later. The core reads them 2–3 clk after the toggle,
+so the words are stable when sampled and only the single toggle bit really crosses. The two clocks are declared asynchronous in STA, which is correct because of this protocol.</p>
+<p><strong>Metastability:</strong> <code>d_pre</code> uses the first synchroniser stage <code>d_s[0]</code>, so the protection comes from slack, not a second flop.
+STA on the routed netlist gives the paths from <code>d_s[0]</code> to the four <code>go</code> flops <strong>14.5 ns of slack at the slow corner</strong> (19.8 ns typical) at 40 MHz.
+That's the time a metastable <code>d_s[0]</code> has to resolve. MTBF = e<sup>t/τ</sup> / (T<sub>w</sub> · f<sub>clk</sub> · f<sub>data</sub>);
+with T<sub>w</sub> = 0.1 ns, 40 MHz, 1.54 MS/s and an assumed slow-corner flop time constant τ = 0.3 ns, that's about 6 × 10<sup>9</sup> years.
+It stays above 1,000 years for any τ up to 0.44 ns. The GF180 library doesn't publish τ,
+so a later revision could take <code>d_pre</code> from <code>d_s[2:1]</code> and add a stage, at the cost of one clk of latency and none of throughput.</p>
+<p><strong>Control pins</strong> (<code>adapt_en</code>, <code>mu_sel</code>, <code>debug_i1</code>) go through independent 2-flop synchronisers. They're static or slow, so they're false-pathed at the pins.
+The readout trigger is edge-detected after synchronisation.</p>
+
+<!-- ===================================================================== -->
+<h2 id="timing">8. Timing closure and signoff</h2>
+<h3>What Tiny Tapeout requires</h3>
+<p>Tiny Tapeout's precheck has <strong>no timing check</strong>. It runs DRC (Magic and KLayout), pin, boundary, power-pin, layer, cell-name, antenna, analog-pin and Verilog checks only.
+Their tools print clock warnings from the typical corner (<code>nom_tt_025C_3v30</code>) alone.
+The published I/O figures are for Sky130 (clock up to about 66 MHz, GPIO output 33 MHz, input 66 MHz, about 20 ns round trip, up to 10 ns clock insertion delay);
+there are no GF180 timing or corner criteria. <strong>This design applies a stricter, self-imposed signoff:</strong> setup and hold at all 9 LibreLane corners, with the I/O model below.</p>
+
+<h3 id="iomodel">Tiny Tapeout GF180 I/O model</h3>
+<table>
+<tr><th>Element</th><th class="n">Delay (ns), ff … ss</th><th>Source</th></tr>
+<tr><td>GF180 input pad (<code>gf180mcu_fd_io__bi_24t</code>, PAD → Y)</td><td class="n">0.9 … 3.1</td><td>PDK liberty, OpenSTA (<code>runs/io_model</code>)</td></tr>
+<tr><td>GF180 output pad (A → PAD, 10–20 pF board load)</td><td class="n">2.0 … 6.7</td><td>PDK liberty, OpenSTA</td></tr>
+<tr><td>TT mux and routing, each direction</td><td class="n">3 … 12</td><td>Estimate: Sky130 TT3.5 measured 20 ns round trip at 22 °C including both pads, so about 6–8 ns per direction typical, × 1.6 for the slow corner</td></tr>
+<tr><td>Clock insertion, pad to tile <code>clk</code></td><td class="n">4 … 15</td><td>Pad + mux; TT's Sky130 figure is ≤ 10 ns</td></tr>
+<tr><td>Pin-to-pin mismatch (same direction)</td><td class="n">±3.5</td><td>TT measured &lt; 2 ns between pins (Sky130); widened for corners and the board</td></tr>
+</table>
+<p><strong>Why the absolute delays don't matter here:</strong> every interface is either <strong>source-synchronous</strong> (SPI in: SCLK_IN travels with its data; SPI out: SCLK_OUT travels with its data)
+or <strong>synchronised</strong> (control pins). There's no path from a pad through the mux and into a clk-launched or clk-captured flop with a board-level timing relationship.
+So the 3–12 ns mux delay and the 4–15 ns clock insertion cancel, and what's left is the mismatch between pins.
+The constraints (<code>src/af_timing.sdc</code>) model exactly that:</p>
+<ul>
+<li><strong>SPI in:</strong> <code>set_input_delay</code> ±(2 + 3.5) ns on CS_IN and both MOSI lanes, relative to the falling SCLK_IN edge.</li>
+<li><strong>SPI out:</strong> a generated clock <code>sclk_out</code> (clk ÷ 2) at the <code>uo_out[0]</code> port, so STA measures the tile's own skew between SCLK_OUT and data exactly.
+Output delays are +(t<sub>su</sub> + skew) and −(t<sub>h</sub> + skew). A hold multicycle reflects that data changes on falling SCLK_OUT, a full clk after the sampling edge.</li>
+<li><strong>Async pins</strong> (control, reset, flags) are false paths.</li>
+<li><strong>PnR</strong> uses <code>pnr.sdc</code> (clk 20 ns, SCLK_IN 40 ns) so the resizer keeps pushing; <strong>signoff</strong> uses <code>signoff.sdc</code> (clk 25 ns, SCLK_IN 50 ns).</li>
+</ul>
+
+<h3>Signoff at the spec: all 9 corners (r18)</h3>
+<table id="cornerTable">
+<tr><th>Corner</th><th class="n">Setup WS (ns)</th><th class="n">Hold WS (ns)</th><th class="n">Setup violations</th><th class="n">Hold violations</th></tr>
+<tr><td><code>max_ss_125C_3v00</code></td><td class="n">+3.022</td><td class="n">+1.330</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>nom_ss_125C_3v00</code></td><td class="n">+3.505</td><td class="n">+1.323</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>min_ss_125C_3v00</code></td><td class="n">+3.915</td><td class="n">+1.318</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>max_tt_025C_3v30</code></td><td class="n">+13.971</td><td class="n">+0.514</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>nom_tt_025C_3v30</code></td><td class="n">+14.224</td><td class="n">+0.510</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>min_tt_025C_3v30</code></td><td class="n">+14.437</td><td class="n">+0.508</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>max_ff_n40C_3v60</code></td><td class="n">+16.128</td><td class="n">+0.174</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>nom_ff_n40C_3v60</code></td><td class="n">+16.128</td><td class="n">+0.172</td><td class="n">0</td><td class="n">0</td></tr>
+<tr><td><code>min_ff_n40C_3v60</code></td><td class="n">+16.128</td><td class="n">+0.171</td><td class="n">0</td><td class="n">0</td></tr>
+</table>
+<p class="note">Setup is limited by the clk-domain datapath (Booth partial product → 20-bit add → acc) at max-RC, slow (125 °C, 3.0 V).
+Worst hold is a fast-corner register-to-register path.</p>
+
+<h3>Margin against clock frequency</h3>
+<p>Signoff STA re-run on the finished layout, with only the clock period changed (SCLK_IN = clk ÷ 2, same I/O model).
+At a 20 ns period this reproduces the flow's own signoff exactly. The slow corner sets the limit at about 45 MHz; 40 MHz leaves +3.02 ns (12% of the period).</p>
+<div class="card chart-wrap" id="marginCard">
+  <div style="font-weight:600;margin-bottom:2px">Worst setup slack by corner family vs clk frequency (ns)</div>
+  <div class="note" style="margin-bottom:8px">Worst of min/nom/max RC for each PVT family · zero line = timing just met · marker = 40 MHz spec</div>
+  <div class="legend" id="marginLegend"></div>
+  <svg id="marginChart" viewBox="0 0 960 300" role="img" aria-label="Line chart: worst setup slack against clk frequency for slow, typical and fast corners."></svg>
+  <div class="tooltip" id="marginTip"></div>
+  <div class="viewtoggle"><button type="button" data-tbl="marginTable">Show table</button></div>
+  <div id="marginTable" hidden style="margin-top:10px"></div>
+</div>
+
+<h3>Closure history at the slow corner (max_ss, 50 MHz target)</h3>
+<table>
+<tr><th>Run</th><th class="n">Worst setup at 20 ns</th><th>Main change</th></tr>
+<tr><td>v4 (r1)</td><td class="n">−7.42</td><td>Rotating rings; first routed 1x1</td></tr>
+<tr><td>v5 r5</td><td class="n">−3.80</td><td>Registered Booth partial product, registered controls</td></tr>
+<tr><td>v5 r8</td><td class="n">−2.87</td><td>Post-global-route timing repair</td></tr>
+<tr><td>v5 r12</td><td class="n">−2.30</td><td>Replicated control flops (<code>ctl_ff</code>)</td></tr>
+<tr><td>v5 r13 / r16</td><td class="n">−1.95</td><td>Preloaded rounding, shift after adder, parallel FIN / UPD</td></tr>
+<tr><td>v5 r17</td><td class="n">+3.05 ns at 25 ns</td><td>Same layout as r16, signed off at the 40 MHz spec with the TT I/O model</td></tr>
+<tr><td>v5 r18</td><td class="n">+3.02 ns at 25 ns</td><td>Post-global-route design repair: slow-corner slew violations 416 → 76</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="phys">9. Physical implementation</h2>
+<table>
+<tr><th>Item</th><th>Result</th></tr>
+<tr><td>Tile</td><td>GF180 1x1: 346.64 × 160.72 µm die (55,713 µm²), 51,967 µm² core</td></tr>
+<tr><td>GDS</td><td><span class="badge"><span class="ic ok">✓</span>built</span> &nbsp;<code>runs/r18/final/gds/tt_um_adaptive_filter.gds</code></td></tr>
+<tr><td>Magic DRC / routing DRC / antenna / LVS</td><td><span class="badge"><span class="ic ok">✓</span>0 / 0 / 0 / 0</span></td></tr>
+<tr><td>Standard-cell utilisation</td><td>87.4% of the core (TT default target is 60%)</td></tr>
+<tr><td>Cells</td><td>2,903 instances including 1,005 fill; 264 flip-flops</td></tr>
+<tr><td>Max slew (3 ns limit)</td><td>76 pins over 3 ns at the slow corner, 0 at typical, 0 at fast. Setup still passes there, but those delays come from extrapolated liberty tables</td></tr>
+<tr><td>Max fanout (10)</td><td>12 clock-tree leaf buffers drive 16–22 flops. This is normal CTS output; clock transition is within limits</td></tr>
+<tr><td>Power, typical, 40 MHz</td><td>6.1 mW (internal 4.3, switching 1.8, leakage negligible)</td></tr>
+</table>
+<h3>Area breakdown (r18, after routing)</h3>
+<table>
+<tr><th>Cell class</th><th class="n">Count</th><th class="n">µm²</th><th class="n">Share of core</th></tr>
+<tr><td>Flip-flops</td><td class="n">264</td><td class="n">18,729</td><td class="n">36.0%</td></tr>
+<tr><td>Logic gates</td><td class="n">881</td><td class="n">17,882</td><td class="n">34.4%</td></tr>
+<tr><td>Inverters</td><td class="n">105</td><td class="n">931</td><td class="n">1.8%</td></tr>
+<tr><td>Clock-tree buffers</td><td class="n">27</td><td class="n">1,897</td><td class="n">3.6%</td></tr>
+<tr><td>Clock-tree inverters</td><td class="n">9</td><td class="n">189</td><td class="n">0.4%</td></tr>
+<tr><td>Timing / slew repair buffers</td><td class="n">161</td><td class="n">3,666</td><td class="n">7.1%</td></tr>
+<tr><td>Other buffers</td><td class="n">6</td><td class="n">105</td><td class="n">0.2%</td></tr>
+<tr><td>Tap cells</td><td class="n">348</td><td class="n">1,528</td><td class="n">2.9%</td></tr>
+<tr><td>Endcaps</td><td class="n">78</td><td class="n">342</td><td class="n">0.7%</td></tr>
+<tr><td>Tie cells</td><td class="n">19</td><td class="n">167</td><td class="n">0.3%</td></tr>
+<tr><td><strong>All standard cells</strong></td><td class="n"><strong>1,898</strong></td><td class="n"><strong>45,436</strong></td><td class="n"><strong>87.4%</strong></td></tr>
+<tr><td>Fill and decap</td><td class="n">1,005</td><td class="n">6,531</td><td class="n">12.6%</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="dv">10. Verification</h2>
+<p><strong>Method.</strong> <code>test/af_cases.py</code> builds each stimulus and predicts every output frame (y, e, weight and tap readouts, flags) with <code>lms_model.py</code>
+(4 taps, μ = 2<sup>mu_sel</sup> LSBs). The cocotb testbench <code>test/test.py</code> (wrapper <code>test/tb.v</code>, Icarus Verilog) acts as SPI master and frame-sync receiver, and every captured frame is compared bit for bit.
+The same cases run on the RTL, the routed netlist with zero delay, and the routed netlist <strong>back-annotated with the signoff SDF</strong> at the slow and fast corners.
+<code>test/dv/run_all.sh</code> runs the full matrix.</p>
+<table>
+<tr><th>Case</th><th>Stimulus and checks</th><th>RTL</th><th>GL</th><th>SDF ss</th><th>SDF ff</th></tr>
+<tr><td>main</td><td>8,105 samples: white-noise IC (μ = 2<sup>−8</sup>), readouts, tone at 2<sup>−12</sup>, full-scale random at 2<sup>−5</sup> (saturation), frozen weights, edge values</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+<tr><td>sysid</td><td>4,000 samples identifying an unknown 4-tap plant, 41 weight readouts; convergence criteria</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+<tr><td>tight</td><td>12 SCLK periods per sample (24 clk, 1 spare), 2,000 samples + readout</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+<tr><td>async</td><td>SCLK_IN 20.05 MHz (not a clk multiple), 12 periods per sample = 23.94 clk</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+<tr><td>overrun</td><td>10 periods per sample (20 clk &lt; 23): debug_o1 must set</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+<tr><td>stress</td><td>clk 50 MHz, SCLK_IN 25 MHz, 13 periods: the original target, functional only</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td><td class="n tm">—</td><td class="n tm">—</td></tr>
+</table>
+<p class="note">Clocks at the spec unless noted: clk 40 MHz, SCLK_IN 20 MHz. "stress" re-runs the old 50 MHz / 25 MHz target functionally (RTL and zero-delay GL only).
+Icarus applies SDF delays but does not evaluate <code>$setup</code>/<code>$hold</code> checks; STA covers those.
+2,890 of 2,900 cells are annotated; the 10 replicated <code>ctl_ff</code> flops have escaped hierarchical names Icarus's SDF reader can't match, and keep the model's default delays.</p>
+
+<h3>Does it adapt? System identification through the chip's own readout</h3>
+<p>The <code>sysid</code> case drives white noise u (σ = 0.35) through an unknown plant
+<code>h = [+0.4375, −0.28125, +0.15625, +0.0625]</code> plus noise (σ = 0.004) to form r. It adapts at μ = 2<sup>−7</sup> for 1,500 samples, then 2<sup>−10</sup> for 2,500.
+Every 100 samples it freezes adaptation, reads the weights out of the chip, and resumes.
+<strong>Pass criteria:</strong> final readout within 3 LSB (0.047) of h for every tap, and error power at least 20 dB below r over the last 1,000 samples.
+<strong>Result:</strong> max |w − h| = 1 LSB (0.016); error 30.9 dB below r. The trace is identical in RTL, GL and both SDF corners.</p>
+<div class="card chart-wrap" id="wCard">
+  <div style="font-weight:600;margin-bottom:2px">Weights read back from the chip vs sample number</div>
+  <div class="note" style="margin-bottom:8px">Readout resolution 1/64 · dashed = true plant tap · μ = 2<sup>−7</sup> until sample 1,500, then 2<sup>−10</sup></div>
+  <div class="legend" id="wLegend"></div>
+  <svg id="wChart" viewBox="0 0 960 320" role="img" aria-label="Line chart: four weights rise from zero to their true values within about 150 samples and stay there."></svg>
+  <div class="tooltip" id="wTip"></div>
+  <div class="viewtoggle"><button type="button" data-tbl="wTable">Show table</button></div>
+  <div id="wTable" hidden style="margin-top:10px"></div>
+</div>
+<div class="card chart-wrap" id="eCard">
+  <div style="font-weight:600;margin-bottom:2px">Error power e² from the chip's e output (dB, 50-sample blocks)</div>
+  <div class="note" style="margin-bottom:8px">Reference line: power of r, the error with no filter</div>
+  <svg id="eChart" viewBox="0 0 960 280" role="img" aria-label="Line chart: error power falls from about −17 dB to about −45 dB within 200 samples, about 31 dB below the power of r."></svg>
+  <div class="tooltip" id="eTip"></div>
+  <div class="viewtoggle"><button type="button" data-tbl="eTable">Show table</button></div>
+  <div id="eTable" hidden style="margin-top:10px"></div>
+</div>
+<p><strong>Interference cancellation</strong> (main case): r = 0.25·sin + h<sub>IC</sub> ∗ v, with v white. Over the second half at μ = 2<sup>−8</sup>,
+the interference left in e is <strong>13.7 dB</strong> below that in r. The wanted sine is kept.</p>
+
+<h3>What verification does not cover yet</h3>
+<ul>
+<li>No cocotb testbench yet; the course expects one. <code>lms_model.py</code> can be the scoreboard.</li>
+<li>No formal CDC tool run; the CDC argument is the structural one in <a href="#cdc">section 7</a> plus STA slack.</li>
+<li>Board-level I/O behaviour depends on the estimated TT GF180 mux delays.</li>
+</ul>
+
+<!-- ===================================================================== -->
+<h2 id="limits">11. Limitations and open items</h2>
+<ol>
+<li><strong>TT GF180 mux delays are estimated</strong> from Sky130 measurements. Because every interface is source-synchronous or synchronised, only pin-to-pin mismatch matters, and the margin (≥ 10 ns) absorbs a large error.</li>
+<li><strong>Utilisation is 87.4%.</strong> There's little room for added logic. 12-bit weights (Q2.10) would save about 1,000 µm² at the cost of μ ≥ 2<sup>−10</sup>.</li>
+<li><strong><code>d_pre</code> uses the first synchroniser stage</strong> (see <a href="#cdc">section 7</a>). It's safe on slack, and hardening it would cost one clk of latency.</li>
+<li><strong><code>mu_sel</code> is a 3-bit bus through independent synchronisers.</strong> Change it between samples or while frozen.</li>
+<li><strong>Readout freezes adaptation</strong> and costs 80 clk, during which samples are dropped.</li>
+<li><strong>Exactly 2 MS/s</strong> is not supported at 40 MHz (the maximum is 1.74 MS/s). The original 2 MS/s target needs clk ≥ 46 MHz, which the slow corner doesn't support.</li>
+<li>Slew at the slow corner: 76 pins exceed the 3 ns transition limit at max-RC slow. Timing passes, but those cell delays are extrapolated, so the slow-corner margin is a little less certain than the number suggests.</li>
+</ol>
+
+<!-- ===================================================================== -->
+<h2 id="repro">12. Files and how to reproduce</h2>
+<table>
+<tr><th>Path (under <code>~/dataa/tt/assess4d</code>)</th><th>Contents</th></tr>
+<tr><td><code>src/tt_um_adaptive_filter.v</code></td><td>Top: pins, reset synchroniser, control and toggle synchronisers</td></tr>
+<tr><td><code>src/af_core.v</code></td><td>Core: rings, Booth MAC, FIN, CUE update, FSM, readout</td></tr>
+<tr><td><code>src/spi_rx.v</code>, <code>src/spi_tx.v</code></td><td>Input port (SCLK_IN domain), output serialiser</td></tr>
+<tr><td><code>src/ctl_ff.v</code></td><td>Unmergeable control flop (GF180 <code>dffrnq_2</code>)</td></tr>
+<tr><td><code>src/af_timing.sdc</code>, <code>pnr.sdc</code>, <code>signoff.sdc</code></td><td>Constraints and TT I/O model</td></tr>
+<tr><td><code>src/config.json</code>, <code>src/config_merged_r18.json</code></td><td>Flow configuration</td></tr>
+<tr><td><code>test/test.py</code>, <code>test/af_cases.py</code>, <code>test/tb.v</code>, <code>test/Makefile</code>, <code>test/dv/run_all.sh</code></td><td>Regression (RTL, GL, SDF)</td></tr>
+<tr><td><code>runs/r18/</code></td><td>Signoff run: GDS, netlists, SPEF, SDF, reports</td></tr>
+<tr><td><code>runs/sta_sweep/</code>, <code>runs/io_model/</code></td><td>Margin sweep, pad characterisation, CDC slack</td></tr>
+</table>
+<div class="card"><p style="margin:0"><strong>Build</strong> (LibreLane container via udocker):</p>
+<p style="margin:6px 0 0"><code>udocker run -v ~/dataa/tt:~/dataa/tt ll2 python3 -m librelane --pdk-root ~/dataa/tt/pdk --pdk gf180mcuD --run-tag r18 src/config_merged_r18.json</code></p>
+<p style="margin:10px 0 0"><strong>Verify:</strong> <code>cd test &amp;&amp; RUN=r18 ./dv/run_all.sh</code> &nbsp; (RTL only: <code>make</code>)</p></div>
+
+</main>
+<script>
+const DATA = {"margin": {"periods": [20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 28.0, 30.0], "series": [{"name": "slow (ss 125 \u00b0C 3.0 V)", "v": [-1.978, -0.978, 0.022, 1.022, 2.022, 3.022, 4.022, 6.022, 8.022]}, {"name": "typical (tt 25 \u00b0C 3.3 V)", "v": [8.971, 9.971, 10.971, 11.971, 12.971, 13.971, 14.971, 16.971, 18.971]}, {"name": "fast (ff \u221240 \u00b0C 3.6 V)", "v": [11.128, 12.128, 13.128, 14.128, 15.128, 16.128, 17.128, 19.128, 21.128]}]}, "sysid": {"h": [0.4375, -0.28125, 0.15625, 0.0625], "w": [[0, 0.0, 0.0, 0.0, 0.0], [100, 0.390625, -0.28125, 0.125, 0.046875], [200, 0.4375, -0.28125, 0.125, 0.046875], [300, 0.4375, -0.296875, 0.15625, 0.0625], [400, 0.4375, -0.28125, 0.125, 0.0625], [500, 0.4375, -0.296875, 0.140625, 0.046875], [600, 0.40625, -0.296875, 0.15625, 0.0625], [700, 0.4375, -0.296875, 0.15625, 0.0625], [800, 0.421875, -0.3125, 0.15625, 0.0625], [900, 0.4375, -0.28125, 0.171875, 0.0625], [1000, 0.421875, -0.296875, 0.125, 0.046875], [1100, 0.4375, -0.296875, 0.15625, 0.0625], [1200, 0.4375, -0.28125, 0.140625, 0.0625], [1300, 0.453125, -0.28125, 0.140625, 0.0625], [1400, 0.4375, -0.28125, 0.140625, 0.0625], [1500, 0.4375, -0.296875, 0.15625, 0.0625], [1600, 0.4375, -0.28125, 0.15625, 0.0625], [1700, 0.4375, -0.28125, 0.15625, 0.0625], [1800, 0.421875, -0.28125, 0.15625, 0.0625], [1900, 0.4375, -0.28125, 0.140625, 0.046875], [2000, 0.4375, -0.28125, 0.15625, 0.046875], [2100, 0.421875, -0.296875, 0.15625, 0.0625], [2200, 0.4375, -0.28125, 0.15625, 0.046875], [2300, 0.4375, -0.296875, 0.15625, 0.0625], [2400, 0.4375, -0.296875, 0.15625, 0.0625], [2500, 0.4375, -0.28125, 0.140625, 0.0625], [2600, 0.421875, -0.296875, 0.15625, 0.0625], [2700, 0.421875, -0.28125, 0.140625, 0.046875], [2800, 0.4375, -0.296875, 0.15625, 0.0625], [2900, 0.421875, -0.28125, 0.15625, 0.0625], [3000, 0.4375, -0.296875, 0.15625, 0.0625], [3100, 0.421875, -0.28125, 0.15625, 0.0625], [3200, 0.421875, -0.28125, 0.15625, 0.046875], [3300, 0.4375, -0.28125, 0.15625, 0.0625], [3400, 0.4375, -0.296875, 0.15625, 0.046875], [3500, 0.4375, -0.28125, 0.140625, 0.0625], [3600, 0.4375, -0.296875, 0.15625, 0.0625], [3700, 0.4375, -0.28125, 0.140625, 0.046875], [3800, 0.4375, -0.296875, 0.15625, 0.0625], [3900, 0.4375, -0.296875, 0.15625, 0.0625], [4000, 0.4375, -0.296875, 0.140625, 0.0625]], "eblk": [-17.22, -25.28, -38.13, -41.14, -39.36, -43.22, -41.73, -38.31, -41.35, -39.94, -41.14, -40.05, -39.27, -40.44, -42.51, -39.18, -40.44, -40.21, -42.41, -40.68, -39.79, -42.32, -40.16, -39.89, -43.45, -40.16, -39.59, -41.81, -41.73, -39.84, -41.5, -45.52, -44.82, -44.98, -45.52, -45.33, -43.95, -44.66, -46.35, -44.51, -45.15, -44.51, -46.12, -43.82, -44.66, -44.82, -43.95, -44.22, -45.52, -46.83, -44.51, -44.66, -46.58, -44.36, -44.36, -45.71, -45.52, -45.15, -43.95, -43.82, -44.98, -44.82, -45.33, -47.09, -44.98, -44.66, -46.12, -45.33, -44.98, -45.71, -46.83, -46.35, -43.95, -46.12, -46.83, -44.98, -44.22, -44.36, -45.33, -45.91], "B": 50, "rpow": -14.4}};
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  var root = document.documentElement;
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') === 'dark' ||
+      (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+
+  function mk(parent, tag, attrs, text) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    parent.appendChild(e);
+    return e;
+  }
+  function fmt(v, d) { return v.toLocaleString('en-CA', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+  // ---------------- Waveforms ----------------
+  // Digital trace from a list of [x, level] change points
+  function trace(g, y, pts, xEnd, h) {
+    var d = '', lv = pts[0][1];
+    d += 'M' + pts[0][0] + ',' + (lv ? y : y + h);
+    for (var i = 1; i < pts.length; i++) {
+      d += ' H' + pts[i][0] + ' V' + (pts[i][1] ? y : y + h);
+    }
+    d += ' H' + xEnd;
+    mk(g, 'path', { d: d, 'class': 'wf' });
+  }
+  // Bus: segments [x0, x1, label] drawn as hexagons, gaps idle
+  function bus(g, y, segs, h, cls) {
+    var s = 4;
+    segs.forEach(function (sg) {
+      var a = sg[0], b = sg[1];
+      mk(g, 'path', { 'class': cls, d: 'M' + a + ',' + (y + h / 2) + ' L' + (a + s) + ',' + y + ' H' + (b - s) +
+        ' L' + b + ',' + (y + h / 2) + ' L' + (b - s) + ',' + (y + h) + ' H' + (a + s) + ' Z' });
+      mk(g, 'text', { x: (a + b) / 2, y: y + h / 2 + 4, 'font-size': 11, 'text-anchor': 'middle' }, sg[2]);
+    });
+  }
+  function label(g, y, h, t) { mk(g, 'text', { x: 10, y: y + h / 2 + 4, 'font-size': 12, 'class': 't2' }, t); }
+
+  (function wfIn() {
+    var g = document.getElementById('wfIn'), x0 = 120, p = 60, n = 13, h = 18, end = x0 + n * p;
+    var clk = [[x0 - 20, 1]];
+    for (var i = 0; i < n; i++) { clk.push([x0 + i * p, 0]); clk.push([x0 + i * p + p / 2, 1]); }
+    label(g, 20, h, 'SCLK_IN'); trace(g, 20, clk, end, h);
+    label(g, 60, h, 'CS_IN'); trace(g, 60, [[x0 - 20, 1], [x0, 0], [x0 + 8 * p, 1]], end, h);
+    var su = [], sr = [];
+    for (var b = 0; b < 8; b++) {
+      su.push([x0 + b * p, x0 + (b + 1) * p, 'u' + (7 - b)]);
+      sr.push([x0 + b * p, x0 + (b + 1) * p, 'r' + (7 - b)]);
+    }
+    label(g, 100, h, 'MOSI_u_in'); bus(g, 100, su, h, 'wf-bus2');
+    label(g, 140, h, 'MOSI_r_in'); bus(g, 140, sr, h, 'wf-bus2');
+    for (var j = 0; j < 8; j++) {
+      mk(g, 'line', { x1: x0 + j * p + p / 2, x2: x0 + j * p + p / 2, y1: 14, y2: 164, 'class': 'xhair', 'stroke-dasharray': '2 3' });
+    }
+    mk(g, 'text', { x: x0 + 7.5 * p, y: 180, 'font-size': 11, 'text-anchor': 'start', 'class': 't2' }, '↑ 8th rising edge: words to holding registers, d_tog flips');
+    mk(g, 'text', { x: x0 + 10.5 * p, y: 108, 'font-size': 11, 'text-anchor': 'middle', 'class': 'tm' }, '5 periods, CS_IN high');
+    mk(g, 'text', { x: x0, y: 196, 'font-size': 11, 'class': 'tm' }, 'dotted: sampling edges · data changes on falling edges');
+  })();
+
+  (function wfOut() {
+    var g = document.getElementById('wfOut'), x0 = 130, q = 48, h = 18, end = x0 + 17 * q;
+    var clk = [[x0 - 30, 0]];
+    for (var c = 0; c < 16; c++) clk.push([x0 + c * q, c % 2]);
+    clk.push([x0 + 16 * q, 0]);
+    label(g, 16, h, 'SCLK_OUT'); trace(g, 16, clk, end, h);
+    label(g, 52, h, 'FS_OUT'); trace(g, 52, [[x0 - 30, 0], [x0, 1], [x0 + 2 * q, 0]], end, h);
+    var sy = [], se = [];
+    for (var b = 0; b < 8; b++) {
+      sy.push([x0 + 2 * b * q, x0 + (2 * b + 2) * q, 'y' + (7 - b)]);
+      se.push([x0 + 2 * b * q, x0 + (2 * b + 2) * q, 'e' + (7 - b)]);
+    }
+    label(g, 88, h, 'MOSI_y_out'); bus(g, 88, sy, h, 'wf-bus');
+    label(g, 124, h, 'MOSI_e_out'); bus(g, 124, se, h, 'wf-bus');
+    for (var k = 0; k < 8; k++) {
+      var xs = x0 + (2 * k + 1) * q;
+      mk(g, 'line', { x1: xs, x2: xs, y1: 10, y2: 146, 'class': 'xhair', 'stroke-dasharray': '2 3' });
+    }
+    mk(g, 'text', { x: x0 + 8 * q, y: 164, 'font-size': 11, 'text-anchor': 'middle', 'class': 'tm' },
+       'one clk = ' + q + ' px · frame = 16 clk = 400 ns at 40 MHz · dotted: receiver sampling edges');
+  })();
+
+  (function stepTl() {
+    var g = document.getElementById('stepTl'), x0 = 70, u = 33;
+    function X(c) { return x0 + c * u; }
+    [0, 5, 10, 15, 20, 25].forEach(function (c) {
+      mk(g, 'line', { x1: X(c), x2: X(c), y1: 30, y2: 200, 'class': 'grid' });
+      mk(g, 'text', { x: X(c), y: 216, 'font-size': 11, 'text-anchor': 'middle', 'class': 'tm' }, c + (c === 25 ? ' clk' : ''));
+    });
+    function blk(c0, n, y, fill, txt, txtFill) {
+      mk(g, 'rect', { x: X(c0) + 1, y: y, width: n * u - 2, height: 26, rx: 4, fill: fill });
+      if (txt) mk(g, 'text', { x: X(c0) + n * u / 2, y: y + 17, 'font-size': 11, 'text-anchor': 'middle', style: 'fill:' + (txtFill || '#fff') }, txt);
+    }
+    mk(g, 'text', { x: 8, y: 57, 'font-size': 12, 'class': 't2' }, 'core');
+    blk(0, 1, 40, 'var(--accent-2)', 'go');
+    ['3', '2', '1', '0'].forEach(function (d, i) { blk(1 + 4 * i, 4, 40, 'var(--series-1)', 'digit ' + d + ' · taps 0–3'); });
+    blk(17, 1, 40, 'var(--axis)', 'dr', 'var(--text-primary)');
+    blk(18, 1, 40, 'var(--text-secondary)', 'FIN');
+    blk(19, 4, 40, 'var(--s3)', 'UPD w0..w3');
+    mk(g, 'rect', { x: X(23) + 1, y: 40, width: 3 * u - 2, height: 26, rx: 4, fill: 'none', stroke: 'var(--axis)', 'stroke-dasharray': '4 3' });
+    mk(g, 'text', { x: X(24.5), y: 57, 'font-size': 11, 'text-anchor': 'middle', 'class': 't2' }, 'spare');
+    mk(g, 'text', { x: X(9), y: 84, 'font-size': 11, 'text-anchor': 'middle', 'class': 't2' }, 'MAC: 17 clk (16 issue + drain), Horner order');
+    mk(g, 'text', { x: 8, y: 123, 'font-size': 12, 'class': 't2' }, 'output');
+    mk(g, 'rect', { x: X(20) + 1, y: 106, width: 6 * u - 2, height: 26, rx: 4, fill: 'var(--wash-1)', stroke: 'var(--series-1)', 'stroke-width': 1.5 });
+    mk(g, 'text', { x: X(23), y: 123, 'font-size': 11, 'text-anchor': 'middle' }, 'y/e frame, 16 clk →');
+    mk(g, 'text', { x: 8, y: 169, 'font-size': 12, 'class': 't2' }, 'input');
+    mk(g, 'rect', { x: X(7.5) + 1, y: 152, width: 16 * u - 2, height: 26, rx: 4, fill: 'var(--wash-2)', stroke: 'var(--accent-2)', 'stroke-width': 1.5 });
+    mk(g, 'text', { x: X(15.5), y: 169, 'font-size': 11, 'text-anchor': 'middle' }, 'next u/r frame shifts in: 8 SCLK_IN = 16 clk, then 2–3 clk sync');
+    mk(g, 'line', { x1: X(23), x2: X(23), y1: 26, y2: 200, stroke: 'var(--text-primary)', 'stroke-width': 1.5 });
+    mk(g, 'text', { x: X(23) - 4, y: 22, 'font-size': 11, 'text-anchor': 'end', 'class': 't2' }, 'step done: earliest next start (23)');
+    mk(g, 'line', { x1: X(26), x2: X(26), y1: 26, y2: 200, stroke: 'var(--text-primary)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4' });
+    mk(g, 'text', { x: X(26) + 4, y: 22, 'font-size': 11, 'class': 't2' }, 'spec: 26');
+  })();
+
+  // ---------------- Line charts ----------------
+  function lineChart(o) {
+    var svg = document.getElementById(o.svg), card = document.getElementById(o.card), tip = document.getElementById(o.tip);
+    var W = 960, H = +svg.getAttribute('viewBox').split(' ')[3];
+    var L = 64, R = o.rightPad || 120, T = 14, B = 40;
+    var xs = o.x, x0 = o.xMin !== undefined ? o.xMin : xs[0], x1 = o.xMax !== undefined ? o.xMax : xs[xs.length - 1];
+    function X(v) { return L + (W - L - R) * (v - x0) / (x1 - x0); }
+    function Y(v) { return T + (H - T - B) * (o.yMax - v) / (o.yMax - o.yMin); }
+    o.yTicks.forEach(function (t) {
+      mk(svg, 'line', { x1: L, x2: W - R, y1: Y(t), y2: Y(t), 'class': 'grid' });
+      mk(svg, 'text', { x: L - 8, y: Y(t) + 4, 'font-size': 12, 'text-anchor': 'end', 'class': 'tm' }, o.yFmt(t));
+    });
+    o.xTicks.forEach(function (t) {
+      mk(svg, 'text', { x: X(t), y: H - B + 18, 'font-size': 12, 'text-anchor': 'middle', 'class': 'tm' }, o.xFmt(t));
+    });
+    mk(svg, 'text', { x: (L + W - R) / 2, y: H - 4, 'font-size': 12, 'text-anchor': 'middle', 'class': 't2' }, o.xLabel);
+    mk(svg, 'line', { x1: L, x2: W - R, y1: H - B, y2: H - B, stroke: 'var(--axis)' });
+    (o.refs || []).forEach(function (r) {
+      mk(svg, 'line', { x1: L, x2: W - R, y1: Y(r.y), y2: Y(r.y), 'class': 'ref', style: r.color ? 'stroke:' + r.color : '' });
+      if (r.label) mk(svg, 'text', { x: W - R + 6, y: Y(r.y) + 4, 'font-size': 11, 'class': 't2' }, r.label);
+    });
+    (o.vmarks || []).forEach(function (vm) {
+      mk(svg, 'line', { x1: X(vm.x), x2: X(vm.x), y1: T, y2: H - B, stroke: 'var(--text-primary)', 'stroke-width': 1, 'stroke-dasharray': '3 3' });
+      mk(svg, 'text', { x: X(vm.x) + 4, y: T + 10, 'font-size': 11, 'class': 't2' }, vm.label);
+    });
+    var lg = o.legend && document.getElementById(o.legend);
+    o.series.forEach(function (s) {
+      var d = '';
+      s.v.forEach(function (v, i) { d += (i ? ' L' : 'M') + X(xs[i]).toFixed(1) + ',' + Y(v).toFixed(1); });
+      mk(svg, 'path', { d: d, 'class': 'ln', stroke: s.color });
+      if (o.direct) {
+        var lv = s.v[s.v.length - 1];
+        mk(svg, 'text', { x: W - R + 6, y: Y(lv) + 4 + (s.dy || 0), 'font-size': 12 }, s.name);
+      }
+      if (lg) {
+        var li = document.createElement('span'); li.className = 'li';
+        var sw = document.createElement('span'); sw.className = 'ln'; sw.style.borderColor = s.color;
+        li.appendChild(sw); li.appendChild(document.createTextNode(s.name)); lg.appendChild(li);
+      }
+    });
+    if (lg && o.legendExtra) {
+      var li2 = document.createElement('span'); li2.className = 'li';
+      var sw2 = document.createElement('span'); sw2.className = 'ln dash'; sw2.style.borderColor = 'var(--text-muted)';
+      li2.appendChild(sw2); li2.appendChild(document.createTextNode(o.legendExtra)); lg.appendChild(li2);
+    }
+    // Hover: crosshair at nearest x, dots on each series, tooltip with all values
+    var xh = mk(svg, 'line', { y1: T, y2: H - B, 'class': 'xhair', visibility: 'hidden' });
+    var dots = o.series.map(function (s) { return mk(svg, 'circle', { r: 5, fill: s.color, 'class': 'dot', visibility: 'hidden' }); });
+    var hit = mk(svg, 'rect', { x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent', tabindex: 0,
+                               'aria-label': o.aria });
+    var cur = -1;
+    function show(i) {
+      cur = i;
+      var xv = X(xs[i]);
+      xh.setAttribute('x1', xv); xh.setAttribute('x2', xv); xh.setAttribute('visibility', 'visible');
+      tip.innerHTML = '';
+      var hd = document.createElement('div'); hd.className = 'tl'; hd.textContent = o.xTip(xs[i]); tip.appendChild(hd);
+      o.series.forEach(function (s, k) {
+        dots[k].setAttribute('cx', xv); dots[k].setAttribute('cy', Y(s.v[i])); dots[k].setAttribute('visibility', 'visible');
+        var r = document.createElement('div');
+        var sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = s.color; sw.style.marginRight = '6px';
+        var b = document.createElement('strong'); b.textContent = o.yTip(s.v[i]);
+        r.appendChild(sw); r.appendChild(document.createTextNode(s.name + ': ')); r.appendChild(b);
+        if (o.extraTip) { var ex = o.extraTip(k, i); if (ex) { var e2 = document.createElement('span'); e2.className = 'tl'; e2.textContent = ' ' + ex; r.appendChild(e2); } }
+        tip.appendChild(r);
+      });
+      var cb = card.getBoundingClientRect(), sb = svg.getBoundingClientRect();
+      var px = (sb.left - cb.left) + xv / W * sb.width + 14;
+      tip.style.left = Math.min(px, cb.width - 250) + 'px';
+      tip.style.top = ((sb.top - cb.top) + 10) + 'px';
+      tip.style.opacity = 1;
+    }
+    function hide() { xh.setAttribute('visibility', 'hidden'); dots.forEach(function (d) { d.setAttribute('visibility', 'hidden'); }); tip.style.opacity = 0; cur = -1; }
+    function nearest(evt) {
+      var sb = svg.getBoundingClientRect(), vx = (evt.clientX - sb.left) / sb.width * W, best = 0;
+      xs.forEach(function (v, i) { if (Math.abs(X(v) - vx) < Math.abs(X(xs[best]) - vx)) best = i; });
+      return best;
+    }
+    hit.addEventListener('pointermove', function (e) { show(nearest(e)); });
+    hit.addEventListener('pointerleave', hide);
+    hit.addEventListener('focus', function () { show(cur < 0 ? xs.length - 1 : cur); });
+    hit.addEventListener('blur', hide);
+    hit.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') { show(Math.max(0, cur - 1)); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { show(Math.min(xs.length - 1, cur + 1)); e.preventDefault(); }
+    });
+    // Table view
+    var tb = document.getElementById(o.table), t = document.createElement('table'), hr = t.insertRow();
+    [o.xLabel].concat(o.series.map(function (s) { return s.name; })).forEach(function (h, j) {
+      var th = document.createElement('th'); th.textContent = h; if (j) th.className = 'n'; hr.appendChild(th); });
+    xs.forEach(function (xv, i) {
+      var r = t.insertRow(), c = r.insertCell(); c.textContent = o.xTip(xv);
+      o.series.forEach(function (s) { var d = r.insertCell(); d.className = 'n'; d.textContent = o.yTip(s.v[i]); });
+    });
+    tb.appendChild(t);
+  }
+
+  document.querySelectorAll('button[data-tbl]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var tb = document.getElementById(b.getAttribute('data-tbl'));
+      tb.hidden = !tb.hidden; b.textContent = tb.hidden ? 'Show table' : 'Hide table';
+    });
+  });
+
+  // Margin vs frequency: x ascending in MHz
+  (function () {
+    var m = DATA.margin, idx = m.periods.map(function (p, i) { return i; }).reverse();
+    var xs = idx.map(function (i) { return 1000 / m.periods[i]; });
+    var cols = ['var(--s1)', 'var(--s2)', 'var(--s3)'];
+    var ser = m.series.map(function (s, k) { return { name: s.name.split(' (')[0], v: idx.map(function (i) { return s.v[i]; }), color: cols[k], full: s.name }; });
+    var lo = Math.min.apply(null, ser[0].v), hi = Math.max.apply(null, ser[2].v);
+    lineChart({ svg: 'marginChart', card: 'marginCard', tip: 'marginTip', table: 'marginTable', legend: 'marginLegend',
+      x: xs, series: ser, direct: true, rightPad: 90,
+      yMin: Math.floor(lo / 4) * 4, yMax: Math.ceil(hi / 4) * 4,
+      yTicks: (function () { var a = []; for (var v = Math.floor(lo / 4) * 4; v <= Math.ceil(hi / 4) * 4; v += 4) a.push(v); return a; })(),
+      xTicks: [34, 36, 38, 40, 42, 44, 46, 48, 50].filter(function (v) { return v >= xs[0] - 0.01 && v <= xs[xs.length - 1] + 0.01; }),
+      xFmt: function (v) { return v; }, yFmt: function (v) { return (v > 0 ? '+' : '') + v; },
+      xLabel: 'clk frequency (MHz)', refs: [{ y: 0, label: '0 ns' }], vmarks: [{ x: 40, label: '40 MHz spec' }],
+      xTip: function (v) { return fmt(v, 2) + ' MHz (' + fmt(1000 / v, 1) + ' ns)'; },
+      yTip: function (v) { return (v >= 0 ? '+' : '') + fmt(v, 2) + ' ns'; },
+      aria: 'Worst setup slack by corner family against clk frequency. Use left and right arrow keys to step through points.' });
+  })();
+
+  // Weights vs sample
+  (function () {
+    var s = DATA.sysid, xs = s.w.map(function (r) { return r[0]; });
+    var cols = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)'];
+    var ser = [0, 1, 2, 3].map(function (k) { return { name: 'w[' + k + ']', v: s.w.map(function (r) { return r[k + 1]; }), color: cols[k] }; });
+    lineChart({ svg: 'wChart', card: 'wCard', tip: 'wTip', table: 'wTable', legend: 'wLegend', legendExtra: 'true plant tap h[k]',
+      x: xs, series: ser, direct: true, rightPad: 70,
+      yMin: -0.4, yMax: 0.5, yTicks: [-0.4, -0.2, 0, 0.2, 0.4],
+      xTicks: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000],
+      xFmt: function (v) { return v.toLocaleString('en-CA'); }, yFmt: function (v) { return fmt(v, 1); },
+      xLabel: 'sample', vmarks: [{ x: 1500, label: 'μ → 2⁻¹⁰' }],
+      refs: s.h.map(function (h, k) { return { y: h, color: cols[k] }; }),
+      xTip: function (v) { return 'after sample ' + v.toLocaleString('en-CA'); },
+      yTip: function (v) { return (v >= 0 ? '+' : '') + fmt(v, 4); },
+      extraTip: function (k, i) { var d = Math.round((ser[k].v[i] - s.h[k]) * 64); return '(h ' + (s.h[k] >= 0 ? '+' : '') + fmt(s.h[k], 4) + ', ' + (d >= 0 ? '+' : '') + d + ' LSB)'; },
+      aria: 'Weights read back from the chip against sample number. Use left and right arrow keys to step through readouts.' });
+  })();
+
+  // Error power vs sample
+  (function () {
+    var s = DATA.sysid, xs = s.eblk.map(function (v, i) { return (i + 1) * s.B; });
+    lineChart({ svg: 'eChart', card: 'eCard', tip: 'eTip', table: 'eTable',
+      x: xs, series: [{ name: 'e²', v: s.eblk, color: 'var(--s1)' }], direct: false, rightPad: 110,
+      xMin: 0, yMin: -50, yMax: -10, yTicks: [-50, -40, -30, -20, -10],
+      xTicks: [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000],
+      xFmt: function (v) { return v.toLocaleString('en-CA'); }, yFmt: function (v) { return v + ' dB'; },
+      xLabel: 'sample', refs: [{ y: s.rpow, label: 'r power ' + fmt(s.rpow, 1) + ' dB' }],
+      vmarks: [{ x: 1500, label: 'μ → 2⁻¹⁰' }],
+      xTip: function (v) { return 'samples ' + (v - s.B + 1).toLocaleString('en-CA') + '–' + v.toLocaleString('en-CA'); },
+      yTip: function (v) { return fmt(v, 1) + ' dB'; },
+      aria: 'Error power from the chip in 50-sample blocks against sample number. Use left and right arrow keys to step through blocks.' });
+  })();
+})();
+</script>
+</body>
+</html>

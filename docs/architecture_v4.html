@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4-tap Sign-Sign LMS Adaptive Filter, v4: architecture</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface-1:   #fcfcfb;
+    --surface-2:   #f0efec;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:        #e1e0d9;
+    --axis:        #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --series-1:    #2a78d6;
+    --series-1-hi: #1c5cab;
+    --wash-1:      rgba(42,120,214,0.10);
+    --wash-2:      rgba(235,104,52,0.12);
+    --accent-2:    #eb6834;
+    --good:        #0ca30c;
+    --good-text:   #006300;
+    --critical:    #d03b3b;
+    --warning:     #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface-1:   #1a1a19;
+      --surface-2:   #383835;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:        #2c2c2a;
+      --axis:        #383835;
+      --border:      rgba(255,255,255,0.10);
+      --series-1:    #3987e5;
+      --series-1-hi: #86b6ef;
+      --wash-1:      rgba(57,135,229,0.16);
+      --wash-2:      rgba(217,89,38,0.18);
+      --accent-2:    #d95926;
+      --good-text:   #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:        #0d0d0d;
+    --surface-1:   #1a1a19;
+    --surface-2:   #383835;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:        #2c2c2a;
+    --axis:        #383835;
+    --border:      rgba(255,255,255,0.10);
+    --series-1:    #3987e5;
+    --series-1-hi: #86b6ef;
+    --wash-1:      rgba(57,135,229,0.16);
+    --wash-2:      rgba(217,89,38,0.18);
+    --accent-2:    #d95926;
+    --good-text:   #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 20px; margin: 44px 0 10px; padding-top: 10px; border-top: 1px solid var(--grid); }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  p, li { color: var(--text-secondary); }
+  p strong, li strong, td strong { color: var(--text-primary); }
+  .sub { color: var(--text-muted); margin: 0 0 20px; }
+  code { font: 13px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+         background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text-primary); }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+  .toggle { position: absolute; top: 18px; right: 24px; }
+  .toggle button { font: inherit; font-size: 13px; color: var(--text-secondary); background: var(--surface-1);
+                   border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+
+  /* Status row */
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 18px 0 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tile .k { font-size: 13px; color: var(--text-muted); }
+  .tile .v { font-size: 24px; font-weight: 600; margin: 2px 0; }
+  .tile .d { font-size: 13px; color: var(--text-secondary); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .badge .ic { width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center;
+               color: #fff; font-size: 11px; line-height: 1; }
+  .ic.ok { background: var(--good); } .ic.bad { background: var(--critical); } .ic.warn { background: var(--warning); color: #0b0b0b; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface-1);
+          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { font-weight: 600; color: var(--text-secondary); background: var(--surface-2); font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td { color: var(--text-secondary); }
+  td:first-child { color: var(--text-primary); }
+
+  figure { margin: 16px 0; }
+  figcaption { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--text-primary); }
+  svg .t2 { fill: var(--text-secondary); }
+  svg .tm { fill: var(--text-muted); }
+  svg .box { fill: var(--surface-1); stroke: var(--axis); stroke-width: 1.5; }
+  svg .box-core { fill: var(--wash-1); stroke: var(--series-1); stroke-width: 1.5; }
+  svg .box-sclk { fill: var(--wash-2); stroke: var(--accent-2); stroke-width: 1.5; }
+  svg .wire { stroke: var(--text-secondary); stroke-width: 1.5; fill: none; }
+  svg .wire-hot { stroke: var(--series-1); stroke-width: 2; fill: none; }
+  svg .domain { fill: none; stroke: var(--axis); stroke-width: 1; stroke-dasharray: 5 4; }
+  svg .grid { stroke: var(--grid); stroke-width: 1; }
+
+  /* Chart */
+  .chart-wrap { position: relative; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+             border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+             opacity: 0; transition: opacity .08s; min-width: 190px; }
+  .tooltip .tv { font-weight: 700; font-size: 15px; color: var(--text-primary); }
+  .tooltip .tl { color: var(--text-secondary); }
+  .bar-hit { fill: transparent; cursor: default; }
+  .bar-hit:focus { outline: none; }
+  .bar { fill: var(--series-1); }
+  .bar.hot { fill: var(--series-1-hi); }
+  .viewtoggle { margin: 6px 0 0; }
+  .viewtoggle button { font: inherit; font-size: 13px; color: var(--text-secondary); background: none;
+                       border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+  .legend-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); margin-right: 14px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .ok-text { color: var(--good-text); font-weight: 600; }
+  .note { font-size: 13px; color: var(--text-muted); }
+  ol li, ul li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<div class="toggle"><button id="themeBtn" type="button">Toggle dark / light</button></div>
+<main>
+
+<h1>4-tap sign-sign LMS adaptive filter: v4 architecture</h1>
+<p class="sub">ECE298A, Tiny Tapeout GF26c (GF180MCU D), one 1x1 tile. Prototype in <code>~/dataa/tt/assess4d</code>.
+Built and verified locally on 2026-10-13 with LibreLane 3.0.14 and the gf180mcuD PDK.</p>
+
+<div class="status">
+  <div class="tile"><div class="k">Function (RTL and routed netlist)</div><div class="v">Bit-exact</div>
+    <div class="d"><span class="badge"><span class="ic ok">✓</span>12,124 frames match the model</span></div></div>
+  <div class="tile"><div class="k">Fits one GF180 tile</div><div class="v">85% full</div>
+    <div class="d"><span class="badge"><span class="ic ok">✓</span>GDS built, DRC 0, LVS 0</span></div></div>
+  <div class="tile"><div class="k">Timing at 50 MHz</div><div class="v">+6.3 ns typ.</div>
+    <div class="d"><span class="badge"><span class="ic warn">!</span>Slow corner fails by 6.9 ns</span></div></div>
+  <div class="tile"><div class="k">Throughput / latency</div><div class="v">≤ 2.27 MS/s</div>
+    <div class="d">u → y about 1.03 µs, one y per u</div></div>
+</div>
+
+<h2>1. What it does</h2>
+<p>A 4-tap FIR filter whose weights adapt by <strong>sign-sign LMS</strong>, for interference cancellation:
+the reference <code>u</code> feeds the FIR, the desired input <code>r</code> carries signal plus interference correlated with <code>u</code>,
+and the chip returns <code>y</code> (the interference estimate) and <code>e = r − y</code> (the cleaned signal).
+System identification uses the same datapath: it's the weights that are of interest there, read out over the debug path.</p>
+<div class="card">
+<p style="margin:0"><strong>Per sample n</strong>, for k = 0..3:</p>
+<p style="margin:6px 0 0"><code>y[n] = sat8( round( Σ x[n−k] · w[k] ) )</code> &nbsp;&nbsp;
+<code>e[n] = sat8( r[n] − y[n] )</code> &nbsp;&nbsp;
+<code>w[k] ← sat14( w[k] + μ · sign(e[n]) · sign(x[n−k]) )</code></p>
+<p class="note" style="margin:8px 0 0">sign(0) = 0. The update uses the same x vector that produced y[n]. μ = 2<sup>mu_sel</sup> weight-register LSBs, so mu_sel = 0 gives μ = 2<sup>−12</sup>.</p>
+</div>
+
+<h3>Targets and how v4 meets them</h3>
+<table>
+<tr><th>Requirement</th><th>v4</th></tr>
+<tr><td>4 taps, 4 weights</td><td>4 × 8-bit taps (Q1.7), 4 × 14-bit weights (Q2.12; FIR uses the top 10 bits, Q2.8)</td></tr>
+<tr><td>Inputs u and r only, no external error</td><td>MOSI_u and MOSI_r lanes; external-error mode and its pin removed</td></tr>
+<tr><td>System clock 50 MHz</td><td><code>clk</code> constrained at 20 ns</td></tr>
+<tr><td>SCLK in and out 25 MHz</td><td>SCLK_IN constrained at 40 ns; SCLK_OUT = clk ÷ 2</td></tr>
+<tr><td>FIR and adaptation at 2 MS/s effective</td><td>One step per received sample, 22 clk per step: up to 2.27 MS/s</td></tr>
+<tr><td>No async FIFOs: shift register, then a second 8-bit register</td><td>Per lane: 7-bit shift register → 8-bit holding register (SCLK_IN domain) → read once by the core after a toggle synchronizer</td></tr>
+<tr><td>Fit on 1 tile</td><td>1x1 GF180 tile, 346.64 × 160.72 µm</td></tr>
+</table>
+
+<h3>Removed compared with spec0p1 (to fit the tile)</h3>
+<ul>
+<li><strong>Taps 8 → 4</strong> and <strong>no async FIFO</strong> (your changes).</li>
+<li><strong>External-error mode and <code>MOSI_e_in</code></strong> (your change). Without it the mode register isn't needed: interference cancellation and system ID are the same datapath.</li>
+<li><strong>SPI weight-load and config lanes</strong> (<code>MOSI_weights_in</code>, <code>MOSI_config</code>, <code>load_wts</code>, <code>cfg_en</code>). μ is now a 3-bit pin field, <code>mu_sel</code> on <code>uio[3:1]</code>.</li>
+<li><strong><code>rst_taps</code> / <code>rst_wts</code></strong>: <code>rst_n</code> clears both.</li>
+<li><strong>Separate weight/tap readout lanes</strong>: readout now goes over the y/e lanes as four 8-bit frames (top 8 bits of each weight, Q2.6, and each tap).</li>
+</ul>
+
+<h2>2. Pins</h2>
+<table>
+<tr><th>Pin</th><th>Name</th><th>Description</th></tr>
+<tr><td><code>clk</code></td><td>clk</td><td>50 MHz system clock</td></tr>
+<tr><td><code>rst_n</code></td><td>rst_n</td><td>Reset, active low: async assert, sync deassert. Clears weights, taps and flags</td></tr>
+<tr><td><code>ui_in[0]</code></td><td>SCLK_IN</td><td>25 MHz input clock from the host (SPI mode 0)</td></tr>
+<tr><td><code>ui_in[1]</code></td><td>CS_IN</td><td>Chip select, active low; a high level discards a partial frame (realign)</td></tr>
+<tr><td><code>ui_in[2]</code></td><td>MOSI_u_in</td><td>Reference u, 8-bit Q1.7, MSB first</td></tr>
+<tr><td><code>ui_in[4]</code></td><td>MOSI_r_in</td><td>Desired r, 8-bit Q1.7, MSB first, sent with u</td></tr>
+<tr><td><code>ui_in[7]</code></td><td>debug_i1</td><td>Rising edge while adapt_en = 0: read out weights and taps</td></tr>
+<tr><td><code>uo_out[0]</code></td><td>SCLK_OUT</td><td>25 MHz output clock (clk ÷ 2), idles low</td></tr>
+<tr><td><code>uo_out[1]</code></td><td>FS_OUT</td><td>Frame sync, high for the first bit of each frame</td></tr>
+<tr><td><code>uo_out[2]</code></td><td>MOSI_y_out</td><td>y (Q1.7); during readout, weight top 8 bits (Q2.6)</td></tr>
+<tr><td><code>uo_out[3]</code></td><td>MOSI_e_out</td><td>e (Q1.7); during readout, tap value</td></tr>
+<tr><td><code>uo_out[6]</code></td><td>debug_o1</td><td>Sticky overrun: a sample arrived while a step or readout was busy</td></tr>
+<tr><td><code>uo_out[7]</code></td><td>debug_o2</td><td>Sticky saturation (y, e or a weight)</td></tr>
+<tr><td><code>uio[0]</code></td><td>adapt_en</td><td>1 = weights adapt; 0 = frozen (filter still runs)</td></tr>
+<tr><td><code>uio[3:1]</code></td><td>mu_sel</td><td>Step size μ = 2<sup>mu_sel − 12</sup> (0 → 2<sup>−12</sup> … 7 → 2<sup>−5</sup>)</td></tr>
+<tr><td colspan="3" class="note">Unused: <code>ui_in[3,5,6]</code>, <code>uo_out[4,5]</code> (driven low), <code>uio[7:4]</code>. All <code>uio</code> pins are inputs (<code>uio_oe = 0</code>).</td></tr>
+</table>
+
+<h2>3. Block diagram</h2>
+<figure class="card">
+<svg viewBox="0 0 980 470" role="img" aria-label="Block diagram: SCLK_IN domain with shift and holding registers, toggle synchronizer into the clk domain core with tap and weight rings, Booth multiply-accumulate, finish and update units, and the output serializer.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--text-secondary)"/></marker>
+    <marker id="arh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--series-1)"/></marker>
+  </defs>
+
+  <!-- domains -->
+  <rect class="domain" x="8" y="30" width="250" height="300" rx="10"/>
+  <text x="20" y="22" class="t2" font-size="13" font-weight="600">SCLK_IN domain (25 MHz)</text>
+  <rect class="domain" x="300" y="30" width="672" height="430" rx="10"/>
+  <text x="312" y="22" class="t2" font-size="13" font-weight="600">clk domain (50 MHz)</text>
+
+  <!-- pins -->
+  <text x="16" y="66" font-size="12" class="t2">MOSI_u</text>
+  <text x="16" y="136" font-size="12" class="t2">MOSI_r</text>
+  <text x="16" y="218" font-size="12" class="t2">SCLK_IN</text>
+  <text x="16" y="250" font-size="12" class="t2">CS_IN</text>
+
+  <!-- spi_rx -->
+  <rect class="box-sclk" x="70" y="55" width="80" height="38" rx="6"/><text x="110" y="72" font-size="12" text-anchor="middle">shift u</text><text x="110" y="87" font-size="11" text-anchor="middle" class="t2">7 bits</text>
+  <rect class="box-sclk" x="70" y="125" width="80" height="38" rx="6"/><text x="110" y="142" font-size="12" text-anchor="middle">shift r</text><text x="110" y="157" font-size="11" text-anchor="middle" class="t2">7 bits</text>
+  <rect class="box-sclk" x="168" y="55" width="80" height="38" rx="6"/><text x="208" y="72" font-size="12" text-anchor="middle">hold u</text><text x="208" y="87" font-size="11" text-anchor="middle" class="t2">8 bits</text>
+  <rect class="box-sclk" x="168" y="125" width="80" height="38" rx="6"/><text x="208" y="142" font-size="12" text-anchor="middle">hold r</text><text x="208" y="157" font-size="11" text-anchor="middle" class="t2">8 bits</text>
+  <rect class="box-sclk" x="96" y="200" width="152" height="52" rx="6"/><text x="172" y="221" font-size="12" text-anchor="middle">bit counter</text><text x="172" y="238" font-size="11" text-anchor="middle" class="t2">8th bit: load, flip d_tog</text>
+  <line class="wire" x1="16" y1="224" x2="94" y2="224" marker-end="url(#ar)"/>
+  <line class="wire" x1="16" y1="234" x2="94" y2="234" marker-end="url(#ar)"/>
+  <line class="wire" x1="16" y1="74" x2="68" y2="74" marker-end="url(#ar)"/>
+  <line class="wire" x1="16" y1="144" x2="68" y2="144" marker-end="url(#ar)"/>
+  <line class="wire" x1="150" y1="74" x2="166" y2="74" marker-end="url(#ar)"/>
+  <line class="wire" x1="150" y1="144" x2="166" y2="144" marker-end="url(#ar)"/>
+
+  <!-- CDC -->
+  <rect class="box" x="272" y="270" width="140" height="52" rx="6"/>
+  <text x="342" y="291" font-size="12" text-anchor="middle">toggle sync</text><text x="342" y="308" font-size="11" text-anchor="middle" class="t2">3 flops → d_stb</text>
+  <path class="wire" d="M248 226 L262 226 L262 296 L270 296" marker-end="url(#ar)"/>
+  <text x="430" y="452" font-size="11" class="tm">pins uio[3:0], ui_in[7] → 2-flop synchronizers → adapt_en, mu_sel, readout trigger</text>
+
+  <!-- capture into core -->
+  <path class="wire" d="M248 74 L330 74" marker-end="url(#ar)"/>
+  <path class="wire" d="M248 144 L290 144 L290 186 L330 186" marker-end="url(#ar)"/>
+  <path class="wire" d="M342 322 L342 338" marker-end="url(#ar)"/>
+  <text x="350" y="334" font-size="11" class="tm">d_stb: start step, capture u and r</text>
+
+  <!-- x ring -->
+  <rect class="box-core" x="332" y="48" width="230" height="62" rx="8"/>
+  <text x="344" y="66" font-size="12" font-weight="600">tap ring x</text>
+  <g font-size="11" text-anchor="middle">
+    <rect class="box" x="346" y="74" width="46" height="26" rx="4"/><text x="369" y="91">x[0]</text>
+    <rect class="box" x="400" y="74" width="46" height="26" rx="4"/><text x="423" y="91">x[1]</text>
+    <rect class="box" x="454" y="74" width="46" height="26" rx="4"/><text x="477" y="91">x[2]</text>
+    <rect class="box" x="508" y="74" width="46" height="26" rx="4"/><text x="531" y="91">x[3]</text>
+  </g>
+  <text x="440" y="66" font-size="11" class="t2">4 × 8 bits</text>
+
+  <!-- r latch -->
+  <rect class="box-core" x="332" y="170" width="100" height="36" rx="6"/><text x="382" y="193" font-size="12" text-anchor="middle">r_q (8)</text>
+
+  <!-- w ring -->
+  <rect class="box-core" x="590" y="48" width="230" height="62" rx="8"/>
+  <text x="602" y="66" font-size="12" font-weight="600">weight ring w</text>
+  <text x="712" y="66" font-size="11" class="t2">4 × 14 bits</text>
+  <g font-size="11" text-anchor="middle">
+    <rect class="box" x="604" y="74" width="46" height="26" rx="4"/><text x="627" y="91">w[0]</text>
+    <rect class="box" x="658" y="74" width="46" height="26" rx="4"/><text x="681" y="91">w[1]</text>
+    <rect class="box" x="712" y="74" width="46" height="26" rx="4"/><text x="735" y="91">w[2]</text>
+    <rect class="box" x="766" y="74" width="46" height="26" rx="4"/><text x="789" y="91">w[3]</text>
+  </g>
+
+  <!-- position 0 taps -->
+  <path class="wire-hot" d="M369 100 L369 130 L560 130 L560 150" marker-end="url(#arh)"/>
+  <path class="wire-hot" d="M627 100 L627 130 L600 130 L600 150" marker-end="url(#arh)"/>
+  <text x="380" y="124" font-size="11" class="t2">only position 0 is read</text>
+
+  <!-- Booth MAC -->
+  <rect class="box-core" x="510" y="152" width="140" height="62" rx="8"/>
+  <text x="580" y="174" font-size="12" text-anchor="middle" font-weight="600">Booth radix-4</text>
+  <text x="580" y="191" font-size="11" text-anchor="middle" class="t2">digit of x[0] × w[0][13:4]</text>
+  <text x="580" y="206" font-size="11" text-anchor="middle" class="t2">→ 12-bit partial product</text>
+  <rect class="box-core" x="510" y="232" width="140" height="56" rx="8"/>
+  <text x="580" y="254" font-size="12" text-anchor="middle" font-weight="600">acc (20 bits)</text>
+  <text x="580" y="271" font-size="11" text-anchor="middle" class="t2">≪2 per digit group, + pp</text>
+  <line class="wire" x1="580" y1="214" x2="580" y2="230" marker-end="url(#ar)"/>
+
+  <!-- FIN -->
+  <rect class="box-core" x="680" y="226" width="170" height="64" rx="8"/>
+  <text x="765" y="246" font-size="12" text-anchor="middle" font-weight="600">FIN</text>
+  <text x="765" y="263" font-size="11" text-anchor="middle" class="t2">y = sat8(round(acc ≫ 8))</text>
+  <text x="765" y="279" font-size="11" text-anchor="middle" class="t2">e = sat8(r − y)</text>
+  <line class="wire" x1="650" y1="260" x2="678" y2="260" marker-end="url(#ar)"/>
+  <path class="wire" d="M432 188 L470 188 L470 310 L730 310 L730 292" marker-end="url(#ar)"/>
+  <text x="476" y="306" font-size="11" class="tm">r</text>
+
+  <!-- UPD -->
+  <rect class="box-core" x="680" y="134" width="170" height="68" rx="8"/>
+  <text x="765" y="155" font-size="12" text-anchor="middle" font-weight="600">CUE update</text>
+  <text x="765" y="172" font-size="11" text-anchor="middle" class="t2">w[0] ± μ · sign(e) · sign(x[0])</text>
+  <text x="765" y="188" font-size="11" text-anchor="middle" class="t2">saturate, write into w[3]</text>
+  <path class="wire" d="M810 226 L810 204" marker-end="url(#ar)"/>
+  <text x="816" y="220" font-size="11" class="tm">sign(e)</text>
+  <path class="wire-hot" d="M850 168 L880 168 L880 92 L814 92" marker-end="url(#arh)"/>
+
+  <!-- serializer -->
+  <rect class="box-core" x="690" y="340" width="150" height="62" rx="8"/>
+  <text x="765" y="362" font-size="12" text-anchor="middle" font-weight="600">spi_tx (2 lanes)</text>
+  <text x="765" y="379" font-size="11" text-anchor="middle" class="t2">8-bit frames, FS_OUT</text>
+  <text x="765" y="394" font-size="11" text-anchor="middle" class="t2">SCLK_OUT = clk ÷ 2</text>
+  <line class="wire" x1="765" y1="290" x2="765" y2="338" marker-end="url(#ar)"/>
+  <path class="wire" d="M840 371 L900 371" marker-end="url(#ar)"/>
+  <text x="904" y="364" font-size="12" class="t2">y / w</text>
+  <text x="904" y="380" font-size="12" class="t2">e / x</text>
+
+  <!-- FSM -->
+  <rect class="box" x="332" y="340" width="300" height="62" rx="8"/>
+  <text x="482" y="362" font-size="12" text-anchor="middle" font-weight="600">step FSM: IDLE → MAC (16) → FIN → UPD (4)</text>
+  <text x="482" y="379" font-size="11" text-anchor="middle" class="t2">rotates both rings every MAC and UPD cycle</text>
+  <text x="482" y="394" font-size="11" text-anchor="middle" class="t2">readout: 4 frames, one rotation per frame</text>
+  <text x="870" y="252" font-size="11" class="tm">flags → debug_o1/2</text>
+</svg>
+<figcaption>Orange: SCLK_IN domain. Blue: clk-domain datapath. The highlighted wires carry the ring traffic: the datapath reads only position 0 of each ring, and the updated weight re-enters at position 3.</figcaption>
+</figure>
+
+<h2>4. The key idea: rotating rings instead of a read mux</h2>
+<p>v3 had the same blocks, but one MAC/update unit reached every tap and weight through a 4:1 mux and wrote every weight back
+through a decoder. That tied all 88 register bits (32 tap + 56 weight), scattered over the tile, to one central point and back.
+<strong>Global routing needed 168% of the only horizontal metal layer</strong>, and the router never closed.</p>
+<p>In v4 the taps and weights are <strong>circular shift registers</strong>. Each MAC cycle uses position 0 and rotates both rings by one,
+so every register bit connects only to its neighbour. After 4 rotations the rings are back in order.</p>
+<figure class="card">
+<svg viewBox="0 0 980 170" role="img" aria-label="Ring rotation over four cycles: position 0 holds tap 0, then tap 1, tap 2, tap 3, then back to tap 0.">
+  <g font-size="12" text-anchor="middle">
+    <text x="90" y="20" class="t2">cycle t</text>
+    <text x="300" y="20" class="t2">t + 1</text>
+    <text x="510" y="20" class="t2">t + 2</text>
+    <text x="720" y="20" class="t2">t + 3</text>
+    <text x="910" y="20" class="t2">t + 4</text>
+  </g>
+  <g font-size="12" text-anchor="middle">
+    <!-- columns of 4 slots; position 0 at top -->
+    <g transform="translate(40,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x0 · w0</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x1 · w1</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x2 · w2</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x3 · w3</text>
+    </g>
+    <g transform="translate(250,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x1 · w1</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x2 · w2</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x3 · w3</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x0 · w0′</text>
+    </g>
+    <g transform="translate(460,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x2 · w2</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x3 · w3</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x0 · w0′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x1 · w1′</text>
+    </g>
+    <g transform="translate(670,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x3 · w3</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x0 · w0′</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x1 · w1′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x2 · w2′</text>
+    </g>
+    <g transform="translate(860,32)">
+      <rect class="box-core" x="0" y="0" width="100" height="24" rx="4"/><text x="50" y="16">x0 · w0′</text>
+      <rect class="box" x="0" y="30" width="100" height="24" rx="4"/><text x="50" y="46">x1 · w1′</text>
+      <rect class="box" x="0" y="60" width="100" height="24" rx="4"/><text x="50" y="76">x2 · w2′</text>
+      <rect class="box" x="0" y="90" width="100" height="24" rx="4"/><text x="50" y="106">x3 · w3′</text>
+    </g>
+  </g>
+  <g class="wire">
+    <line x1="146" y1="88" x2="244" y2="88" marker-end="url(#ar)"/>
+    <line x1="356" y1="88" x2="454" y2="88" marker-end="url(#ar)"/>
+    <line x1="566" y1="88" x2="664" y2="88" marker-end="url(#ar)"/>
+    <line x1="776" y1="88" x2="854" y2="88" marker-end="url(#ar)"/>
+  </g>
+  <text x="490" y="164" font-size="12" text-anchor="middle" class="t2">Blue = position 0, the only slot the datapath reads. During UPD, w′ is the updated weight written back at position 3. The same rotation serves MAC, UPD and readout.</text>
+</svg>
+</figure>
+<table>
+<tr><th>Global routing</th><th class="n">v3 (mux)</th><th class="n">v4 (rings)</th></tr>
+<tr><td>Metal2 (vertical)</td><td class="n">96%</td><td class="n">46%</td></tr>
+<tr><td><strong>Metal3 (only horizontal layer)</strong></td><td class="n"><strong>168%</strong></td><td class="n"><strong>45%</strong></td></tr>
+<tr><td>Metal4 (vertical, shared with power grid)</td><td class="n">79%</td><td class="n">1%</td></tr>
+<tr><td>Overflowing routing cells</td><td class="n">6,935</td><td class="n">0</td></tr>
+<tr><td>Detailed-routing violations</td><td class="n">~26,000, not converging</td><td class="n">240 → 0</td></tr>
+</table>
+<p class="note">Signal routing on Tiny Tapeout GF180 tiles is limited to Metal2–Metal4; Metal1 is inside the cells and Metal5 belongs to the chip top level.</p>
+
+<h2>5. One step, cycle by cycle</h2>
+<figure class="card">
+<svg viewBox="0 0 980 230" role="img" aria-label="Timeline of one 22-cycle step: 1 capture cycle, 16 MAC cycles in four digit groups, 1 FIN cycle, 4 update cycles; the output frame starts at FIN and runs 16 cycles; the next sample can arrive 24 to 26 cycles later at 2 MS/s.">
+  <g transform="translate(60,0)">
+    <!-- scale: 36 px per clk; 25 clk shown -->
+    <g class="grid">
+      <line x1="0" y1="40" x2="0" y2="200"/><line x1="360" y1="40" x2="360" y2="200"/><line x1="720" y1="40" x2="720" y2="200"/><line x1="900" y1="40" x2="900" y2="200"/>
+    </g>
+    <g font-size="11" class="tm" text-anchor="middle">
+      <text x="0" y="214">0</text><text x="360" y="214">10</text><text x="720" y="214">20</text><text x="900" y="214">25 clk</text>
+    </g>
+    <text x="-52" y="64" font-size="12" class="t2">core</text>
+    <rect x="0" y="48" width="34" height="26" rx="4" fill="var(--accent-2)"/>
+    <g fill="var(--series-1)">
+      <rect x="36" y="48" width="142" height="26" rx="4"/>
+      <rect x="180" y="48" width="142" height="26" rx="4"/>
+      <rect x="324" y="48" width="142" height="26" rx="4"/>
+      <rect x="468" y="48" width="142" height="26" rx="4"/>
+    </g>
+    <rect x="612" y="48" width="34" height="26" rx="4" fill="var(--text-secondary)"/>
+    <rect x="648" y="48" width="142" height="26" rx="4" fill="var(--good)"/>
+    <g font-size="11" text-anchor="middle" style="fill:#fff">
+      <text x="107" y="65" style="fill:#fff">digit 3 · taps 0–3</text>
+      <text x="251" y="65" style="fill:#fff">digit 2 · taps 0–3</text>
+      <text x="395" y="65" style="fill:#fff">digit 1 · taps 0–3</text>
+      <text x="539" y="65" style="fill:#fff">digit 0 · taps 0–3</text>
+      <text x="719" y="65" style="fill:#fff">UPD w0..w3</text>
+    </g>
+    <g font-size="11" text-anchor="middle" class="t2">
+      <text x="17" y="90">IDLE</text><text x="323" y="90">MAC: 16 clk, Horner order</text><text x="629" y="90">FIN</text><text x="719" y="90">4 clk</text>
+    </g>
+    <text x="-52" y="130" font-size="12" class="t2">output</text>
+    <rect x="612" y="116" width="288" height="26" rx="4" fill="var(--wash-1)" stroke="var(--series-1)" stroke-width="1.5"/>
+    <text x="756" y="133" font-size="11" text-anchor="middle">y/e frame, 16 clk (continues →)</text>
+    <text x="-52" y="176" font-size="12" class="t2">input</text>
+    <rect x="0" y="162" width="576" height="26" rx="4" fill="var(--wash-2)" stroke="var(--accent-2)" stroke-width="1.5"/>
+    <text x="288" y="179" font-size="11" text-anchor="middle">next u/r frame arriving: 8 SCLK = 16 clk, then a CS gap</text>
+    <line x1="792" y1="40" x2="792" y2="200" stroke="var(--text-primary)" stroke-width="1.5"/>
+    <text x="786" y="36" font-size="11" class="t2" text-anchor="end">step done at 22 clk: earliest next sample</text>
+  </g>
+</svg>
+<figcaption>At 2.08 MS/s (12 SCLK periods = 24 clk per sample) there are 2 idle clocks per step; at 1.92 MS/s (13 periods) there are 4. The output frame overlaps the next step's MAC, so it never limits throughput.</figcaption>
+</figure>
+
+<h3>Horner-order Booth multiply</h3>
+<p>Each 8-bit tap splits into four radix-4 Booth digits d<sub>3</sub>..d<sub>0</sub> ∈ {−2, −1, 0, +1, +2}, so x = Σ 4<sup>j</sup>d<sub>j</sub>.
+v3 added each partial product at its own shift (a 4-way variable shifter). v4 runs the <strong>digit outer, tap inner</strong>:</p>
+<div class="card"><code>acc = ((S<sub>3</sub>·4 + S<sub>2</sub>)·4 + S<sub>1</sub>)·4 + S<sub>0</sub></code>, &nbsp; where <code>S<sub>j</sub> = Σ<sub>k</sub> d<sub>j</sub>(x[k]) · w[k][13:4]</code></div>
+<p>So <code>acc</code> only ever shifts by a fixed 2 bits (just wiring) at the start of each digit group, and the tap order within a group
+is exactly the ring rotation. The intermediate values stay within ±348k, inside the 20-bit accumulator.</p>
+
+<h3>Number formats</h3>
+<table>
+<tr><th>Signal</th><th class="n">Bits</th><th>Format</th><th>Notes</th></tr>
+<tr><td>u, r, y, e</td><td class="n">8</td><td>signed Q1.7</td><td>y and e saturate to [−1, 1 − 2<sup>−7</sup>]</td></tr>
+<tr><td>Weight register</td><td class="n">14</td><td>signed Q2.12</td><td>Saturating; the 4 extra LSBs allow μ down to 2<sup>−12</sup></td></tr>
+<tr><td>Weight used by FIR</td><td class="n">10</td><td>signed Q2.8</td><td>Top 10 bits (truncated)</td></tr>
+<tr><td>Booth partial product</td><td class="n">12</td><td>signed</td><td>±1 or ±2 × the 10-bit weight</td></tr>
+<tr><td>Accumulator</td><td class="n">20</td><td>signed Q5.15</td><td>Sum of 4 Q3.15 products; cannot overflow</td></tr>
+<tr><td>Internal error r − y</td><td class="n">9</td><td>signed Q2.7</td><td>Exact; its sign drives the update</td></tr>
+<tr><td>Readout weight</td><td class="n">8</td><td>signed Q2.6</td><td>Top 8 bits of the weight register</td></tr>
+</table>
+
+<h2>6. Clock-domain crossing (no FIFO)</h2>
+<ol>
+<li>On every rising SCLK_IN edge, the u and r lanes shift into 7-bit registers. A 3-bit counter, cleared while CS_IN is high, marks the 8th bit.</li>
+<li>On the 8th bit, the full words go into the 8-bit <strong>holding registers</strong> and <code>d_tog</code> flips.</li>
+<li>In the clk domain, a 3-flop synchronizer turns the toggle into a one-cycle <code>d_stb</code>, 2–3 clk later.</li>
+<li>On <code>d_stb</code>, the core copies <code>hold u</code> into the tap ring and <code>hold r</code> into <code>r_q</code>.</li>
+</ol>
+<p><strong>Why it's safe:</strong> the holding registers change again only at the next frame's 8th bit, at least 8 SCLK periods (16 clk) later,
+and the core reads them 2–3 clk after the toggle. The words are therefore stable when sampled, and only the single toggle bit actually crosses domains.
+STA treats the two clocks as asynchronous (<code>set_clock_groups -asynchronous</code>), so these paths are not timed. That's correct, because the toggle protocol makes them safe.</p>
+<p><strong>Rate rule:</strong> a sample arriving while a step (22 clk) or readout is busy is dropped and sets <code>debug_o1</code>.
+The host must leave at least 11 SCLK periods per sample; use 12 or more, since the strobe position moves by a clock when SCLK is asynchronous.</p>
+
+<h2>7. Rates and latency</h2>
+<table>
+<tr><th>Quantity</th><th class="n">Value</th><th>Basis</th></tr>
+<tr><td>Core step</td><td class="n">22 clk = 440 ns</td><td>1 capture + 16 MAC + 1 FIN + 4 UPD</td></tr>
+<tr><td>Maximum sample rate</td><td class="n">2.27 MS/s</td><td>50 MHz ÷ 22</td></tr>
+<tr><td>2.08 MS/s (12 SCLK periods per sample)</td><td class="n"><span class="badge"><span class="ic ok">✓</span>tested</span></td><td>Also with SCLK_IN 0.25% fast and asynchronous</td></tr>
+<tr><td>1.92 MS/s (13 SCLK periods per sample)</td><td class="n"><span class="badge"><span class="ic ok">✓</span>tested</span></td><td>Full regression</td></tr>
+<tr><td>Exactly 2.000 MS/s</td><td class="n">—</td><td>12.5 SCLK periods at 25 MHz: alternate 12/13, or use SCLK = 24 or 26 MHz</td></tr>
+<tr><td>u → y latency</td><td class="n">≈ 1.03 µs</td><td>320 ns frame in + ~50 ns sync + 340 ns MAC/FIN + 320 ns frame out</td></tr>
+</table>
+
+<h2>8. Area: getting to one tile</h2>
+<p>Synthesis area (Yosys, GF180 7-track 3.3 V cells) for each step of the reduction, against the 1x1 core area.
+Layout adds about 1.5× on top of synthesis (tap cells, slew/fanout buffers, clock tree), which is why v3 at 60% of the core at synthesis still couldn't fit.</p>
+<div class="card chart-wrap" id="areaCard">
+  <div style="font-weight:600;margin-bottom:2px">Synthesis cell area by version (µm²)</div>
+  <div class="note" style="margin-bottom:8px">Reference line: GF180 1x1 tile core, 51,967 µm²</div>
+  <svg id="areaChart" viewBox="0 0 960 300" role="img" aria-label="Horizontal bar chart of synthesis area by version"></svg>
+  <div class="tooltip" id="tip"></div>
+  <div class="viewtoggle"><button type="button" id="tblBtn">Show table</button></div>
+  <div id="areaTable" hidden style="margin-top:10px"></div>
+</div>
+
+<h3>v4 area breakdown</h3>
+<table>
+<tr><th>After routing</th><th class="n">µm²</th><th class="n">Share of core</th></tr>
+<tr><td>Logic gates</td><td class="n">16,813</td><td class="n">32%</td></tr>
+<tr><td>Flip-flops (206)</td><td class="n">14,686</td><td class="n">28%</td></tr>
+<tr><td>Clock tree buffers</td><td class="n">5,348</td><td class="n">10%</td></tr>
+<tr><td>Timing/slew repair buffers (188)</td><td class="n">4,399</td><td class="n">8%</td></tr>
+<tr><td>Tap, endcap, inverter, tie and other cells</td><td class="n">2,919</td><td class="n">6%</td></tr>
+<tr><td><strong>Total cells</strong></td><td class="n"><strong>44,165</strong></td><td class="n"><strong>85%</strong></td></tr>
+<tr><td>Fill and decap</td><td class="n">7,802</td><td class="n">15%</td></tr>
+</table>
+<table style="margin-top:12px">
+<tr><th>Synthesis by block</th><th class="n">µm²</th><th class="n">Flip-flops</th></tr>
+<tr><td><code>af_core</code>: rings, Booth MAC, FIN, update, FSM, readout</td><td class="n">22,663</td><td class="n">134</td></tr>
+<tr><td><code>spi_rx</code>: shift and holding registers</td><td class="n">2,838</td><td class="n">34</td></tr>
+<tr><td><code>spi_tx</code>: 2-lane serializer</td><td class="n">2,821</td><td class="n">23</td></tr>
+<tr><td>Top: synchronizers, reset</td><td class="n">1,146</td><td class="n">15</td></tr>
+<tr><td><strong>Total</strong></td><td class="n"><strong>29,468</strong></td><td class="n"><strong>206</strong></td></tr>
+</table>
+
+<h2>9. Implementation results (1x1, 50 MHz)</h2>
+<table>
+<tr><th>Check</th><th>Result</th></tr>
+<tr><td>GDS</td><td><span class="badge"><span class="ic ok">✓</span>built</span> &nbsp;<code>runs/r1/final/gds/tt_um_adaptive_filter.gds</code></td></tr>
+<tr><td>Magic DRC / routing DRC / antenna</td><td><span class="badge"><span class="ic ok">✓</span>0 / 0 / 0</span></td></tr>
+<tr><td>LVS</td><td><span class="badge"><span class="ic ok">✓</span>0 errors</span></td></tr>
+<tr><td>Lint (Verilator)</td><td><span class="badge"><span class="ic ok">✓</span>0 errors, 0 warnings</span></td></tr>
+<tr><td>Utilization</td><td>85% of the 51,967 µm² core (Tiny Tapeout's default target is 60%)</td></tr>
+<tr><td>Hold</td><td><span class="badge"><span class="ic ok">✓</span>met at all 9 corners</span> (worst +0.15 ns)</td></tr>
+<tr><td>Setup, typical (25 °C, 3.3 V)</td><td><span class="badge"><span class="ic ok">✓</span>+6.3 ns</span>: clk fmax 74.6 MHz, SCLK_IN fmax 120 MHz</td></tr>
+<tr><td>Setup, fast (−40 °C, 3.6 V)</td><td><span class="badge"><span class="ic ok">✓</span>+8.6 ns</span>: clk fmax 129 MHz</td></tr>
+<tr><td>Setup, slow (125 °C, 3.0 V)</td><td><span class="badge"><span class="ic bad">✕</span>−6.9 ns, 98 paths</span>: clk fmax 37.2 MHz. SCLK_IN domain passes (60 MHz)</td></tr>
+<tr><td>Max slew violations</td><td>2 at typical, 163 at slow</td></tr>
+<tr><td>Power, typical</td><td>6.5 mW (63% clock tree, 35% flip-flops). Uses the tool's default switching activity, so treat it as a rough figure</td></tr>
+</table>
+<p>The slow-corner critical path is <code>x[0]</code> → Booth digit select → 12-bit partial product → 20-bit add → <code>acc</code>, 50 cells deep.</p>
+
+<h2>10. Verification</h2>
+<p><code>test/run_tb.py</code> builds a stimulus, predicts every output frame with <code>lms_model.py</code> (set to 4 taps, μ = 2<sup>mu_sel</sup> LSBs),
+runs <code>test/tb.v</code> in Icarus Verilog as SPI master and frame-sync receiver, and compares frame by frame.
+Setting <code>GL=</code> to the routed netlist runs the same cases on the gate-level netlist with the GF180 cell models.</p>
+<table>
+<tr><th>Case</th><th>Stimulus</th><th>RTL</th><th>Gate level</th></tr>
+<tr><td>main</td><td>25 MHz SCLK, 13 periods per sample: 6,000 white-noise IC samples (μ = 2<sup>−8</sup>), readouts, tone at μ = 2<sup>−12</sup>, full-scale random at μ = 2<sup>−5</sup> (saturation), frozen weights, edge values; 8,114 frames</td><td><span class="badge"><span class="ic ok">✓</span>0 mismatches</span></td><td><span class="badge"><span class="ic ok">✓</span>0 mismatches</span></td></tr>
+<tr><td>tight</td><td>12 periods per sample (2.08 MS/s), 2,000 samples + readout</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+<tr><td>async</td><td>SCLK_IN 25.063 MHz (0.25% fast), 12 periods per sample</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+<tr><td>overrun</td><td>10 periods per sample (2.5 MS/s): debug_o1 must set</td><td><span class="badge"><span class="ic ok">✓</span></span></td><td><span class="badge"><span class="ic ok">✓</span></span></td></tr>
+</table>
+<p>Interference reduction in the main case, second half, μ = 2<sup>−8</sup>: <strong>13.7 dB</strong> (the test channel has 4 taps, so a 4-tap filter models it fully).
+Gate-level runs use zero-delay cell models; they check the netlist's logic, not its timing.</p>
+
+<h2>11. Open issues and next steps</h2>
+<ol>
+<li><strong>Slow-corner setup (−6.9 ns).</strong> Register the Booth partial product, splitting the critical path roughly in half.
+Cost: about 12 flip-flops (~900 µm², taking utilization to ~87%) and 1 extra clock per step (23 clk, max 2.17 MS/s, still above 2 MS/s).
+Whether the course requires slow-corner closure is worth checking with the instructor; typical and fast corners already pass.</li>
+<li><strong>Utilization at 85%</strong> leaves little margin for changes. The next easy saving is 12-bit weights (Q2.10, about 1,000 µm²),
+at the cost of a coarser minimum step (μ ≥ 2<sup>−10</sup>).</li>
+<li><strong>I/O timing is generic.</strong> Input and output delays are 20% of the clock period. They are not derived from Tiny Tapeout's pad and mux delays.
+Running SCLK_IN, SCLK_OUT and data at 25 MHz through the TT I/O mux should be checked against TT's GF180 I/O specs.</li>
+<li><strong>2.000 MS/s exactly</strong> isn't a whole number of 25 MHz SCLK periods; pick 12 or 13 periods, or change SCLK.</li>
+<li><strong>Testing on the TT board</strong>: the course expects cocotb tests. This regression could be ported to cocotb with <code>lms_model.py</code> as the scoreboard.</li>
+</ol>
+
+</main>
+
+<script>
+(function () {
+  // Theme toggle: stamps data-theme on <html>, which wins over the OS setting both ways
+  var root = document.documentElement;
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') === 'dark' ||
+      (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+
+  var data = [
+    { name: '8-tap, spec0p1 (298a)',       v: 95041, note: 'Needs 2x2: 139,046 µm² after routing' },
+    { name: '4-tap as specified (assess4)', v: 55097, note: 'Over the core at synthesis' },
+    { name: '4-tap lean v2 (assess4b)',     v: 32586, note: 'CTS failed: no room for clock buffers' },
+    { name: '4-tap lean v3 (assess4c)',     v: 31113, note: 'Placed at 90%, routing failed (Metal3 168%)' },
+    { name: '4-tap v4 rings (assess4d)',    v: 29468, note: 'Routed: 85% after layout, DRC/LVS clean' }
+  ];
+  var CORE = 51967, MAX = 100000;
+  var svg = document.getElementById('areaChart');
+  var NS = 'http://www.w3.org/2000/svg';
+  var L = 230, R = 900, top = 16, rowH = 50, barH = 22;
+  function x(v) { return L + (R - L) * v / MAX; }
+  function el(tag, attrs, text) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    svg.appendChild(e);
+    return e;
+  }
+  var bottom = top + rowH * data.length;
+  [0, 25000, 50000, 75000, 100000].forEach(function (t) {
+    el('line', { x1: x(t), x2: x(t), y1: top - 6, y2: bottom, 'class': 'grid' });
+    el('text', { x: x(t), y: bottom + 18, 'font-size': 12, 'text-anchor': 'middle', 'class': 'tm' }, t.toLocaleString('en-CA'));
+  });
+  var tip = document.getElementById('tip');
+  var card = document.getElementById('areaCard');
+  data.forEach(function (d, i) {
+    var y = top + i * rowH + (rowH - barH) / 2;
+    el('text', { x: L - 10, y: y + barH / 2 + 4, 'font-size': 13, 'text-anchor': 'end' }, d.name);
+    var w = x(d.v) - L, r = 4;
+    var bar = el('path', { 'class': 'bar',
+      d: 'M' + L + ',' + y + ' H' + (L + w - r) + ' Q' + (L + w) + ',' + y + ' ' + (L + w) + ',' + (y + r) +
+         ' V' + (y + barH - r) + ' Q' + (L + w) + ',' + (y + barH) + ' ' + (L + w - r) + ',' + (y + barH) + ' H' + L + ' Z' });
+    el('text', { x: x(d.v) + 8, y: y + barH / 2 + 4, 'font-size': 12, 'class': 't2' }, d.v.toLocaleString('en-CA'));
+    var hit = el('rect', { x: 0, y: top + i * rowH, width: 960, height: rowH, 'class': 'bar-hit', tabindex: 0,
+                           'aria-label': d.name + ': ' + d.v.toLocaleString('en-CA') + ' square micrometres. ' + d.note });
+    function show(evt) {
+      bar.setAttribute('class', 'bar hot');
+      tip.innerHTML = '';
+      var a = document.createElement('div'); a.className = 'tv'; a.textContent = d.v.toLocaleString('en-CA') + ' µm²';
+      var b = document.createElement('div'); b.className = 'tl'; b.textContent = d.name;
+      var c = document.createElement('div'); c.className = 'tl';
+      c.textContent = Math.round(100 * d.v / CORE) + '% of the 1x1 core · ' + d.note;
+      tip.appendChild(a); tip.appendChild(b); tip.appendChild(c);
+      var cb = card.getBoundingClientRect(), sb = svg.getBoundingClientRect();
+      var px = evt && evt.clientX ? evt.clientX - cb.left + 14 : (x(d.v) / 960) * sb.width + 20;
+      var py = (sb.top - cb.top) + ((top + i * rowH) / 300) * sb.height - 6;
+      tip.style.left = Math.min(px, cb.width - 260) + 'px';
+      tip.style.top = py + 'px';
+      tip.style.opacity = 1;
+    }
+    function hide() { bar.setAttribute('class', 'bar'); tip.style.opacity = 0; }
+    hit.addEventListener('pointermove', show);
+    hit.addEventListener('pointerleave', hide);
+    hit.addEventListener('focus', function () { show(null); });
+    hit.addEventListener('blur', hide);
+  });
+  el('line', { x1: L, x2: L, y1: top - 6, y2: bottom, stroke: 'var(--axis)', 'stroke-width': 1 });
+  el('line', { x1: x(CORE), x2: x(CORE), y1: top - 10, y2: bottom, stroke: 'var(--text-primary)', 'stroke-width': 1.5 });
+  el('text', { x: x(CORE) + 6, y: top - 0, 'font-size': 11, 'class': 't2' }, '1x1 core 51,967');
+
+  // Table view
+  var tb = document.getElementById('areaTable');
+  var t = document.createElement('table');
+  var hr = t.insertRow(); ['Version', 'Synthesis µm²', '% of 1x1 core', 'Outcome'].forEach(function (h, j) {
+    var th = document.createElement('th'); th.textContent = h; if (j === 1 || j === 2) th.className = 'n'; hr.appendChild(th); });
+  data.forEach(function (d) {
+    var r = t.insertRow();
+    [d.name, d.v.toLocaleString('en-CA'), Math.round(100 * d.v / CORE) + '%', d.note].forEach(function (v, j) {
+      var c = r.insertCell(); c.textContent = v; if (j === 1 || j === 2) c.className = 'n'; });
+  });
+  tb.appendChild(t);
+  var btn = document.getElementById('tblBtn');
+  btn.addEventListener('click', function () {
+    tb.hidden = !tb.hidden; btn.textContent = tb.hidden ? 'Show table' : 'Hide table';
+  });
+})();
+</script>
+</body>
+</html>

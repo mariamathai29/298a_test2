@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4-tap Sign-Sign LMS Adaptive Filter, v5: architecture and design specification</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface-1:   #fcfcfb;
+    --surface-2:   #f0efec;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --grid:        #e1e0d9;
+    --axis:        #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --series-1:    #2a78d6;
+    --series-1-hi: #1c5cab;
+    --wash-1:      rgba(42,120,214,0.10);
+    --wash-2:      rgba(235,104,52,0.12);
+    --accent-2:    #eb6834;
+    --good:        #0ca30c;
+    --good-text:   #006300;
+    --critical:    #d03b3b;
+    --warning:     #fab219;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface-1:   #1a1a19;
+      --surface-2:   #383835;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --grid:        #2c2c2a;
+      --axis:        #383835;
+      --border:      rgba(255,255,255,0.10);
+      --series-1:    #3987e5;
+      --series-1-hi: #86b6ef;
+      --wash-1:      rgba(57,135,229,0.16);
+      --wash-2:      rgba(217,89,38,0.18);
+      --accent-2:    #d95926;
+      --good-text:   #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:        #0d0d0d;
+    --surface-1:   #1a1a19;
+    --surface-2:   #383835;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:        #2c2c2a;
+    --axis:        #383835;
+    --border:      rgba(255,255,255,0.10);
+    --series-1:    #3987e5;
+    --series-1-hi: #86b6ef;
+    --wash-1:      rgba(57,135,229,0.16);
+    --wash-2:      rgba(217,89,38,0.18);
+    --accent-2:    #d95926;
+    --good-text:   #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 20px; margin: 44px 0 10px; padding-top: 10px; border-top: 1px solid var(--grid); }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  p, li { color: var(--text-secondary); }
+  p strong, li strong, td strong { color: var(--text-primary); }
+  .sub { color: var(--text-muted); margin: 0 0 20px; }
+  code { font: 13px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+         background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text-primary); }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+  .toggle { position: absolute; top: 18px; right: 24px; }
+  .toggle button { font: inherit; font-size: 13px; color: var(--text-secondary); background: var(--surface-1);
+                   border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+
+  /* Status row */
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 18px 0 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tile .k { font-size: 13px; color: var(--text-muted); }
+  .tile .v { font-size: 24px; font-weight: 600; margin: 2px 0; }
+  .tile .d { font-size: 13px; color: var(--text-secondary); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .badge .ic { width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center;
+               color: #fff; font-size: 11px; line-height: 1; }
+  .ic.ok { background: var(--good); } .ic.bad { background: var(--critical); } .ic.warn { background: var(--warning); color: #0b0b0b; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface-1);
+          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { font-weight: 600; color: var(--text-secondary); background: var(--surface-2); font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td { color: var(--text-secondary); }
+  td:first-child { color: var(--text-primary); }
+
+  figure { margin: 16px 0; }
+  figcaption { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--text-primary); }
+  svg .t2 { fill: var(--text-secondary); }
+  svg .tm { fill: var(--text-muted); }
+  svg .box { fill: var(--surface-1); stroke: var(--axis); stroke-width: 1.5; }
+  svg .box-core { fill: var(--wash-1); stroke: var(--series-1); stroke-width: 1.5; }
+  svg .box-sclk { fill: var(--wash-2); stroke: var(--accent-2); stroke-width: 1.5; }
+  svg .wire { stroke: var(--text-secondary); stroke-width: 1.5; fill: none; }
+  svg .wire-hot { stroke: var(--series-1); stroke-width: 2; fill: none; }
+  svg .domain { fill: none; stroke: var(--axis); stroke-width: 1; stroke-dasharray: 5 4; }
+  svg .grid { stroke: var(--grid); stroke-width: 1; }
+
+  /* Chart */
+  .chart-wrap { position: relative; }
+  .tooltip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+             border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+             opacity: 0; transition: opacity .08s; min-width: 190px; }
+  .tooltip .tv { font-weight: 700; font-size: 15px; color: var(--text-primary); }
+  .tooltip .tl { color: var(--text-secondary); }
+  .bar-hit { fill: transparent; cursor: default; }
+  .bar-hit:focus { outline: none; }
+  .bar { fill: var(--series-1); }
+  .bar.hot { fill: var(--series-1-hi); }
+  .viewtoggle { margin: 6px 0 0; }
+  .viewtoggle button { font: inherit; font-size: 13px; color: var(--text-secondary); background: none;
+                       border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+  .legend-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); margin-right: 14px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .ok-text { color: var(--good-text); font-weight: 600; }
+  .note { font-size: 13px; color: var(--text-muted); }
+  ol li, ul li { margin: 3px 0; }
+
+  /* v5 additions */
+  :root { --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; } }
+  :root[data-theme="dark"] { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; }
+  .toc ol { columns: 2; margin: 6px 0 0; padding-left: 20px; }
+  .toc a { color: var(--series-1); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  a { color: var(--series-1); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 6px; font-size: 13px; color: var(--text-secondary); }
+  .legend .li { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .ln { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+  .legend .ln.dash { border-top-style: dashed; }
+  svg .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  svg .ref { fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  svg .xhair { stroke: var(--axis); stroke-width: 1; }
+  svg .dot { stroke: var(--surface-1); stroke-width: 2; }
+  svg .wf { fill: none; stroke: var(--text-primary); stroke-width: 1.5; }
+  svg .wf-bus { fill: var(--wash-1); stroke: var(--series-1); stroke-width: 1.2; }
+  svg .wf-bus2 { fill: var(--wash-2); stroke: var(--accent-2); stroke-width: 1.2; }
+  .tm { color: var(--text-muted); }
+</style>
+</head>
+<body>
