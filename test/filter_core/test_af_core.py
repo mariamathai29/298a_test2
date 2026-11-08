@@ -1,6 +1,6 @@
 """af_core unit tests (cocotb). See af_core_tb.py for the bench.
 
-Expected values come from lms_model.py, the bit-exact reference model.
+Expected values come from filter_golden.py, the bit-exact reference model.
 """
 import os
 import random
@@ -10,20 +10,19 @@ import cocotb
 
 from af_core_tb import S_FIN, S_IDLE, S_MAC, S_UPD, AfCoreTB
 
-# lms_model.py sits at the top of the tree (repo) or one level up (298_test)
+# filter_golden.py sits at the top of the repo
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-for p in (os.path.join(ROOT, ".."), ROOT):
-    sys.path.insert(0, p)
-import lms_model  # noqa: E402
+sys.path.insert(0, ROOT)
+import filter_golden  # noqa: E402
 
-lms_model.N_TAPS = 4
+filter_golden.N_TAPS = 4
 
 STEP_CLK = 23                             # go cycle + 17 MAC + FIN + 4 UPD
 
 
 def model_from(taps, weights, adapt=False, mu_sel=0):
     """A model holding these taps and weights; frozen unless `adapt`."""
-    m = lms_model.AdaptiveFilter(mu_q=1 << mu_sel)
+    m = filter_golden.AdaptiveFilter(mu_q=1 << mu_sel)
     m.adapt_en = adapt
     m.x = list(taps)
     m.w = list(weights)
