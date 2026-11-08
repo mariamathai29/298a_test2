@@ -23,7 +23,16 @@ jobs:
         shell: bash
         run: pip install -r test/requirements.txt
 
+      - name: Run filter_core unit tests
+        run: |
+          cd test/filter_core
+          make clean
+          make
+          # make will return success even if the test fails, so check for failure in the results.xml
+          ! grep failure results.xml
+
       - name: Run tests
+        if: success() || failure()
         run: |
           cd test
           make clean
@@ -34,7 +43,9 @@ jobs:
       - name: Test Summary
         uses: test-summary/action@v2.4
         with:
-          paths: "test/results.xml"
+          paths: |
+            test/filter_core/results.xml
+            test/results.xml
         if: always()
 
       - name: upload waveform and test results
@@ -45,4 +56,5 @@ jobs:
           path: |
             test/tb.fst
             test/results.xml
+            test/filter_core/results.xml
             test/output/*
