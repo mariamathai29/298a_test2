@@ -3,6 +3,13 @@
 
 /* This testbench just instantiates the module and makes some convenient wires
    that can be driven / tested by the cocotb test.py.
+
+   Each pin the tests use has its own name:
+     inputs  sclk_in, cs_n, mosi_u, mosi_r   SPI input port   -> ui_in[0], [1], [2], [4]
+             adapt_en, mu_sel[2:0]           control          -> uio_in[0], [3:1]
+     outputs sclk_out, fs_out                output port      <- uo_out[0], [1]
+             sdo_y, sdo_e, sdo_w             y, e, weight     <- uo_out[2], [3], [4]
+             ovf, sat                        sticky flags     <- uo_out[6], [7]
 */
 module tb ();
 
@@ -17,8 +24,11 @@ module tb ();
   reg clk;
   reg rst_n;
   reg ena;
-  reg [7:0] ui_in;
-  reg [7:0] uio_in;
+  reg sclk_in, cs_n, mosi_u, mosi_r;
+  reg adapt_en;
+  reg [2:0] mu_sel;
+  wire [7:0] ui_in  = {3'b000, mosi_r, 1'b0, mosi_u, cs_n, sclk_in};
+  wire [7:0] uio_in = {4'b0000, mu_sel, adapt_en};
   wire [7:0] uo_out;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
@@ -27,7 +37,14 @@ module tb ();
   wire VGND = 1'b0;
 `endif
 
-  // Replace tt_um_example with your module name:
+  wire sclk_out = uo_out[0];
+  wire fs_out   = uo_out[1];
+  wire sdo_y    = uo_out[2];
+  wire sdo_e    = uo_out[3];
+  wire sdo_w    = uo_out[4];
+  wire ovf      = uo_out[6];
+  wire sat      = uo_out[7];
+
   tt_um_adaptive_filter user_project (
 
       // Include power ports for the Gate Level test:
