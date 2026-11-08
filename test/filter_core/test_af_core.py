@@ -2,18 +2,12 @@
 
 Expected values come from filter_golden.py, the bit-exact reference model.
 """
-import os
 import random
-import sys
 
 import cocotb
 
+import filter_golden
 from af_core_tb import S_FIN, S_IDLE, S_MAC, S_UPD, AfCoreTB
-
-# filter_golden.py sits at the top of the repo
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, ROOT)
-import filter_golden  # noqa: E402
 
 filter_golden.N_TAPS = 4
 
