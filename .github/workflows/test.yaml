@@ -31,10 +31,21 @@ jobs:
           # make will return success even if the test fails, so check for failure in the results.xml
           ! grep failure results.xml
 
+      - name: Run tests
+        if: success() || failure()
+        run: |
+          cd test
+          make clean
+          make
+          # make will return success even if the test fails, so check for failure in the results.xml
+          ! grep failure results.xml
+
       - name: Test Summary
         uses: test-summary/action@v2.4
         with:
-          paths: "test/filter_core/results.xml"
+          paths: |
+            test/filter_core/results.xml
+            test/results.xml
         if: always()
 
       - name: upload waveform and test results
@@ -42,4 +53,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results
-          path: test/filter_core/results.xml
+          path: |
+            test/tb.fst
+            test/results.xml
+            test/filter_core/results.xml
+            test/output/*
