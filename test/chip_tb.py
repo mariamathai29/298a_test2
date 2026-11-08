@@ -60,9 +60,10 @@ class ChipTB:
         await ClockCycles(self.dut.clk, 10)  # reset synchronizer
 
     async def _sclk_in(self):
-        # SCLK_IN is not aligned with clk
+        # SCLK_IN is not aligned with clk; an odd period gets the extra ps low
         await Timer(3300, "ps")
-        Clock(self.dut.sclk_in, self.tsclk_ps, "ps").start(start_high=False)
+        Clock(self.dut.sclk_in, self.tsclk_ps, "ps",
+              period_high=self.tsclk_ps // 2).start(start_high=False)
 
     async def _receive(self):
         d = self.dut
@@ -101,6 +102,18 @@ class ChipTB:
         d.cs_n.value = 1
         await ClockCycles(d.sclk_in, self.gap - 1, rising=False)
         self.sent += 1
+
+    async def send_partial(self, u, r, bits):
+        """An aborted frame: CS low for only `bits` (1 .. 7) bits, then high."""
+        d = self.dut
+        await FallingEdge(d.sclk_in)
+        d.cs_n.value = 0
+        for i in range(7, 7 - bits, -1):
+            d.mosi_u.value = (u >> i) & 1
+            d.mosi_r.value = (r >> i) & 1
+            await FallingEdge(d.sclk_in)
+        d.cs_n.value = 1
+        await ClockCycles(d.sclk_in, self.gap - 1, rising=False)
 
     async def drain(self, expect, limit=2000):
         """Wait until `expect` frames have arrived (or `limit` clk cycles)."""
