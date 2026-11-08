@@ -50,11 +50,11 @@ set spi_in [get_ports {ui_in[1] ui_in[2] ui_in[4]}]
 set_input_delay -max [expr $host_skew + $io_skew]    -clock sclk_in -clock_fall $spi_in
 set_input_delay -min [expr -($host_skew + $io_skew)] -clock sclk_in -clock_fall $spi_in
 
-# --- SPI output: FS_OUT and the two data lanes change on falling SCLK_OUT and
+# --- SPI output: FS_OUT and the three data lanes change on falling SCLK_OUT and
 # the receiver samples on rising SCLK_OUT, one clk period later. Checked
 # against the generated clock at the port, so the tile's own clk-to-out skew
 # between SCLK_OUT and data is analysed exactly; io_skew adds the outside.
-set spi_out [get_ports {uo_out[1] uo_out[2] uo_out[3]}]
+set spi_out [get_ports {uo_out[1] uo_out[2] uo_out[3] uo_out[4]}]
 set_output_delay -max [expr $rx_tsu + $io_skew]    -clock sclk_out $spi_out
 set_output_delay -min [expr -($rx_th + $io_skew)]  -clock sclk_out $spi_out
 # The data never changes on a rising SCLK_OUT edge (spi_tx shifts only when
@@ -67,7 +67,7 @@ set_multicycle_path -hold 1 -start -from [get_clocks clk] -to [get_clocks sclk_o
 set async_in [get_ports {ui_in[3] ui_in[5] ui_in[6] ui_in[7] uio_in[*] rst_n ena}]
 set_input_delay 0 -clock clk $async_in
 set_false_path -from $async_in
-set static_out [get_ports {uo_out[4] uo_out[5] uo_out[6] uo_out[7] uio_out[*] uio_oe[*]}]
+set static_out [get_ports {uo_out[5] uo_out[6] uo_out[7] uio_out[*] uio_oe[*]}]
 set_output_delay 0 -clock clk $static_out
 set_false_path -to $static_out
 

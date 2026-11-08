@@ -28,14 +28,14 @@ pinout:
   ui[4]: "MOSI_r_in"
   ui[5]: ""
   ui[6]: ""
-  ui[7]: "debug_i1 (readout trigger)"
+  ui[7]: ""
 
   # Outputs
   uo[0]: "SCLK_OUT"
   uo[1]: "FS_OUT"
-  uo[2]: "MOSI_y_out (weights in readout)"
-  uo[3]: "MOSI_e_out (taps in readout)"
-  uo[4]: ""
+  uo[2]: "MOSI_y_out"
+  uo[3]: "MOSI_e_out"
+  uo[4]: "MOSI_w_out (monitor weight)"
   uo[5]: ""
   uo[6]: "debug_o1 (sticky overrun)"
   uo[7]: "debug_o2 (sticky saturation)"

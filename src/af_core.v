@@ -1,11 +1,12 @@
 `default_nettype none
 
 // Adaptive filter core (clk domain), 4-tap prototype v5: FIR with a serial
-// radix-4 Booth multiplier, sign-sign LMS CUE, output sequencing and readout.
+// radix-4 Booth multiplier, sign-sign LMS CUE, output sequencing and a weight
+// monitor lane.
 //
 // Data: taps x[] (Q1.7) and weights w[] (Q2.12) are circular shift registers
-// ("rings"). The multiplier, the update and the readout only ever look at
-// position 0 (x[0], w[0]); to reach the other taps the rings rotate by one.
+// ("rings"). The multiplier, the update and the weight monitor only ever look
+// at position 0 (x[0], w[0]); to reach the other taps the rings rotate by one.
 // There is no read mux and no write decoder: each register bit only talks to
 // its neighbour.
 //
@@ -20,8 +21,9 @@
 //   17     MAC    16    0  0    drain: acc += last pp_q
 //   18     FIN    -     0  0    y = sat8(acc >> 8), e = sat8(r - y)
 //   19-22  UPD    0-3   0  1    w[0] += mu * sign(e) * sign(x[0]) (if
-//                               adapting) as it rotates to w[3]; the y/e
-//                               frame is loaded into the serializer at cnt 0
+//                               adapting) as it rotates to w[3]; the frame
+//                               (y, e, monitor weight) is loaded into the
+//                               serializer at cnt 0
 //
 // The 16 MAC issues run in Horner order: Booth digit outer (3 down to 0), tap
 // inner. The sum that ends digit groups 3, 2 and 1 is shifted left by 2, which
@@ -29,11 +31,13 @@
 // 20 rotations per step = 5 full turns, so both rings end in their starting
 // order. At clk = 40 MHz the input may run up to 1.74 MS/s (spec: 13 SCLK_IN
 // periods at 20 MHz per sample = 26 clk, 1.54 MS/s). A sample that arrives
-// while a step or readout is in progress is dropped and sets ovf_flag.
+// while a step is in progress is dropped and sets ovf_flag.
 //
-// Readout: rising edge of debug_i1 while adapt_en = 0. Steps stop; four
-// 20-cycle slots, each loading one frame (lane a = w[0] top 8 bits, Q2.6;
-// lane b = x[0]) and then rotating the rings once.
+// Weight monitor: every frame also carries one weight, top 8 bits (Q2.6), on
+// a third lane: step n (counted from reset, dropped samples excluded) carries
+// weight n mod 4, as it was before that step's update. A full set arrives
+// every 4 frames; with adapt_en = 0, 4 consecutive frames are an exact
+// snapshot.
 //
 // mu = 2^mu_sel weight-register LSBs (mu_sel = 0: 2^-12 ... 7: 2^-5).
 // Weights and taps are cleared by rst_n only.
@@ -63,7 +67,6 @@ module af_core (
     // Control pins (already synchronized to clk)
     input  wire        adapt_en,
     input  wire [2:0]  mu_sel,
-    input  wire        ro_trig,
 
     // New sample (one-cycle strobe; data from the SCLK_IN holding registers)
     input  wire        d_pre,        // d_stb one cycle early
@@ -73,14 +76,15 @@ module af_core (
 
     // Output serializer (idle whenever tx_load is pulsed)
     output wire        tx_load,
-    output wire [7:0]  tx_a,         // y, or weight during readout
-    output wire [7:0]  tx_b,         // e, or tap during readout
+    output wire [7:0]  tx_a,         // y
+    output wire [7:0]  tx_b,         // e
+    output wire [7:0]  tx_c,         // monitor weight, top 8 bits (Q2.6)
 
     output reg         sat_flag,
     output reg         ovf_flag
 );
     // ======================================================================
-    // 1. Step FSM and readout sequencer
+    // 1. Step FSM
     // ======================================================================
     localparam S_IDLE = 2'd0, S_MAC = 2'd1, S_FIN = 2'd2, S_UPD = 2'd3;
 
@@ -88,19 +92,10 @@ module af_core (
     reg  [4:0] cnt;          // MAC: {digit group, tap}, 16 = drain; UPD: tap
     reg  [1:0] digit_q;      // Booth digit of the next MAC issue (3 .. 0)
 
-    reg        ro_trig_d;    // ro_trig one cycle late, for edge detection
-    reg        ro_req;       // readout requested, waiting for the step to end
-    reg        ro_act;       // readout running
-    reg  [1:0] ro_slot;      // which of the 4 frames
-    reg  [4:0] ro_cyc;       // cycle within a 20-cycle slot
-
     wire       go_f;         // step start, FSM copy (section 2)
 
     reg  [1:0] state_n;
     reg  [4:0] cnt_n;
-    reg        ro_req_n, ro_act_n;
-    reg  [1:0] ro_slot_n;
-    reg  [4:0] ro_cyc_n;
     always @(*) begin
         state_n = state;
         cnt_n   = cnt;
@@ -124,49 +119,17 @@ module af_core (
                     state_n = S_IDLE;
             end
         endcase
-
-        // A readout waits for the FSM to be idle, then runs 4 slots
-        ro_req_n  = ro_req;
-        ro_act_n  = ro_act;
-        ro_slot_n = ro_slot;
-        ro_cyc_n  = ro_cyc;
-        if (ro_trig && !ro_trig_d && !adapt_en)
-            ro_req_n = 1'b1;
-        if (ro_act) begin
-            ro_cyc_n = (ro_cyc == 5'd19) ? 5'd0 : ro_cyc + 5'd1;
-            if (ro_cyc == 5'd19) begin
-                ro_slot_n = ro_slot + 2'd1;
-                if (ro_slot == 2'd3) begin
-                    ro_act_n = 1'b0;
-                    ro_req_n = 1'b0;
-                end
-            end
-        end else if (ro_req && state == S_IDLE && !go_f) begin
-            ro_act_n  = 1'b1;
-            ro_slot_n = 2'd0;
-            ro_cyc_n  = 5'd0;
-        end
     end
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state     <= S_IDLE;
-            cnt       <= 5'd0;
-            digit_q   <= 2'd3;
-            ro_trig_d <= 1'b0;
-            ro_req    <= 1'b0;
-            ro_act    <= 1'b0;
-            ro_slot   <= 2'd0;
-            ro_cyc    <= 5'd0;
+            state   <= S_IDLE;
+            cnt     <= 5'd0;
+            digit_q <= 2'd3;
         end else begin
-            state     <= state_n;
-            cnt       <= cnt_n;
-            digit_q   <= ~cnt_n[3:2];       // digit group 0 .. 3 = digit 3 .. 0
-            ro_trig_d <= ro_trig;
-            ro_req    <= ro_req_n;
-            ro_act    <= ro_act_n;
-            ro_slot   <= ro_slot_n;
-            ro_cyc    <= ro_cyc_n;
+            state   <= state_n;
+            cnt     <= cnt_n;
+            digit_q <= ~cnt_n[3:2];         // digit group 0 .. 3 = digit 3 .. 0
         end
     end
 
@@ -176,11 +139,9 @@ module af_core (
     //   go   : start a step (shift u in, latch r, clear acc)
     //   rot  : rotate both rings by one
     //   load : load a frame into the serializer
-    wire go_n   = d_pre && (state_n == S_IDLE) && !ro_req_n && !ro_act_n;
-    wire rot_n  = ((state_n == S_MAC) && !cnt_n[4]) || (state_n == S_UPD) ||
-                  (ro_act_n && ro_cyc_n == 5'd1);
-    wire load_n = ((state_n == S_UPD) && (cnt_n == 5'd0)) ||
-                  (ro_act_n && ro_cyc_n == 5'd0);
+    wire go_n   = d_pre && (state_n == S_IDLE);
+    wire rot_n  = ((state_n == S_MAC) && !cnt_n[4]) || (state_n == S_UPD);
+    wire load_n = (state_n == S_UPD) && (cnt_n == 5'd0);
 
     // Replicated control flops: one rotate copy per x ring half and per
     // weight, one step-start copy per x ring half, one for the datapath and
@@ -375,9 +336,26 @@ module af_core (
     assign w_write = (state == S_UPD) && adapt_q;
 
     // ======================================================================
-    // 7. Sticky flags
+    // 7. Weight monitor lane
     // ======================================================================
-    //   ovf_flag : a sample arrived while a step or readout was running
+    // In MAC issue k (cnt = k, digit group 0) weight k sits at position 0,
+    // not yet updated. mon_w captures weight mon_k there; the frame loads it on
+    // UPD 0, and mon_k moves on to the next weight.
+    reg [1:0] mon_k;                  // weight carried by this step's frame
+    reg [7:0] mon_w;                  // its top 8 bits (Q2.6)
+
+    always @(posedge clk or negedge rst_n)
+        if (!rst_n)         mon_k <= 2'd0;
+        else if (tx_load_q) mon_k <= mon_k + 2'd1;
+
+    always @(posedge clk)
+        if (state == S_MAC && cnt == {3'd0, mon_k})
+            mon_w <= w0[13:6];
+
+    // ======================================================================
+    // 8. Sticky flags
+    // ======================================================================
+    //   ovf_flag : a sample arrived while a step was running
     //   sat_flag : y, e or a weight saturated
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -394,11 +372,12 @@ module af_core (
     end
 
     // ======================================================================
-    // 8. Output
+    // 9. Output
     // ======================================================================
     assign tx_load = tx_load_q;
-    assign tx_a    = ro_act ? w0[13:6] : y_q;
-    assign tx_b    = ro_act ? x0       : e_q;
+    assign tx_a    = y_q;
+    assign tx_b    = e_q;
+    assign tx_c    = mon_w;
 
     wire _unused = &{1'b0, acc[7:0]};
 
