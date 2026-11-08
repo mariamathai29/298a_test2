@@ -12,6 +12,3 @@ test/__pycache__/
 test/results.xml
 test/gate_level_netlist.v
 **/__pycache__/
-app/build
-app/tb/work
-app/tb/logs
