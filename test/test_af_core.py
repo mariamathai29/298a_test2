@@ -1,4 +1,4 @@
-"""filter_core unit tests (cocotb). See af_core_tb.py for the bench.
+"""af_core unit tests (cocotb). See af_core_tb.py for the bench.
 
 Expected values come from filter_golden.py, the bit-exact reference model.
 """
@@ -52,15 +52,15 @@ async def test_reset(dut):
     assert tb.state() == S_IDLE
     assert tb.taps() == [0, 0, 0, 0]
     assert tb.weights() == [0, 0, 0, 0]
-    assert dut.core_t_load.value == 0
-    assert dut.core_sat_flag.value == 0
-    assert dut.core_ovf_flag.value == 0
+    assert dut.t_load.value == 0
+    assert dut.sat_flag.value == 0
+    assert dut.ovf_flag.value == 0
 
     await tb.wait(100)
     assert tb.state() == S_IDLE
     assert tb.outputs == []
-    assert dut.core_sat_flag.value == 0
-    assert dut.core_ovf_flag.value == 0
+    assert dut.sat_flag.value == 0
+    assert dut.ovf_flag.value == 0
 
 
 @cocotb.test()
@@ -130,7 +130,7 @@ async def test_step_timing(dut):
     assert tb.taps() == taps
     assert tb.weights() == w
     assert len(tb.outputs) == 1
-    assert dut.core_ovf_flag.value == 0
+    assert dut.ovf_flag.value == 0
 
 
 # Weight register values (Q2.12) for the single-tap sweep. The multiplier uses
@@ -190,9 +190,9 @@ async def test_saturation(dut):
         await tb.reset()
         m = await check_step(tb, taps, weights, r)
         assert m.sat_flag == sat, f"model sat_flag {m.sat_flag}, case expects {sat}"
-        assert int(dut.core_sat_flag.value) == sat, \
-            f"taps {taps} weights {weights} r {r}: sat_flag {int(dut.core_sat_flag.value)}, expected {int(sat)}"
-        assert dut.core_ovf_flag.value == 0
+        assert int(dut.sat_flag.value) == sat, \
+            f"taps {taps} weights {weights} r {r}: sat_flag {int(dut.sat_flag.value)}, expected {int(sat)}"
+        assert dut.ovf_flag.value == 0
 
 
 @cocotb.test()
@@ -267,8 +267,8 @@ async def test_update_saturation(dut):
         await tb.reset()
         m = await check_step(tb, [1, 1, 1, 1], weights, r, adapt=True, mu_sel=7)
         assert m.sat_flag == sat, f"model sat_flag {m.sat_flag}, case expects {sat}"
-        assert int(dut.core_sat_flag.value) == sat, \
-            f"weights {weights} r {r}: sat_flag {int(dut.core_sat_flag.value)}, expected {int(sat)}"
+        assert int(dut.sat_flag.value) == sat, \
+            f"weights {weights} r {r}: sat_flag {int(dut.sat_flag.value)}, expected {int(sat)}"
         assert all(-8192 <= w <= 8191 for w in tb.weights())
 
 
@@ -319,7 +319,7 @@ async def test_update_random(dut):
         got = await tb.step(u, r)
         assert got == exp, f"step {i}: got (y, e) {got}, expected {exp}"
         assert tb.weights() == m.w, f"step {i}: weights {tb.weights()}, expected {m.w}"
-        assert int(dut.core_sat_flag.value) == m.sat_flag, f"step {i}: sat_flag differs"
+        assert int(dut.sat_flag.value) == m.sat_flag, f"step {i}: sat_flag differs"
 
 
 # ---------------- Sample handling ----------------
@@ -365,8 +365,8 @@ async def test_sample_spacing(dut):
         await tb.reset()
         dropped = await run_schedule(tb, [(0, 50, -30), (s, -70, 90)], w)
         assert dropped == (1 if s < STEP_CLK else 0)
-        assert int(dut.core_ovf_flag.value) == dropped, \
-            f"spacing {s}: ovf_flag {int(dut.core_ovf_flag.value)}, expected {dropped}"
+        assert int(dut.ovf_flag.value) == dropped, \
+            f"spacing {s}: ovf_flag {int(dut.ovf_flag.value)}, expected {dropped}"
 
 
 @cocotb.test()
@@ -378,7 +378,7 @@ async def test_max_rate(dut):
     samples = [(STEP_CLK * i, rng.randint(-128, 127), rng.randint(-128, 127)) for i in range(500)]
     dropped = await run_schedule(tb, samples, [0, 0, 0, 0])
     assert dropped == 0
-    assert dut.core_ovf_flag.value == 0
+    assert dut.ovf_flag.value == 0
 
 
 @cocotb.test()
@@ -394,7 +394,7 @@ async def test_overrun_random(dut):
         t += rng.randint(10, 40)
     dropped = await run_schedule(tb, samples, [500, -500, 250, -250])
     assert 0 < dropped < len(samples), f"{dropped} dropped: the run does not exercise both cases"
-    assert dut.core_ovf_flag.value == 1
+    assert dut.ovf_flag.value == 1
 
 
 # ---------------- Reset and flags ----------------
@@ -405,7 +405,7 @@ async def check_clean_after_reset(tb, where):
     d = tb.dut
     assert tb.state() == S_IDLE, f"reset {where}: state {tb.state()}"
     assert tb.taps() == [0] * 4 and tb.weights() == [0] * 4, f"reset {where}: rings not cleared"
-    assert d.core_ovf_flag.value == 0 and d.core_sat_flag.value == 0, f"reset {where}: flags not cleared"
+    assert d.ovf_flag.value == 0 and d.sat_flag.value == 0, f"reset {where}: flags not cleared"
     tb.outputs.clear()
     await tb.wait(100)
     assert tb.outputs == [], f"reset {where}: output after reset {tb.outputs}"
@@ -418,9 +418,9 @@ async def check_clean_after_reset(tb, where):
 
 
 async def pulse_reset(tb):
-    tb.dut.core_rst.value = 1
+    tb.dut.rst.value = 1
     await tb.wait(3)
-    tb.dut.core_rst.value = 0
+    tb.dut.rst.value = 0
     await tb.wait(1)
 
 
@@ -441,7 +441,7 @@ async def test_reset_mid_operation(dut):
         await tb.wait(3)
         await tb.send(2, 2)               # inside the step: dropped, ovf_flag
         await tb.wait(STEP_CLK)
-        assert dut.core_sat_flag.value == 1 and dut.core_ovf_flag.value == 1
+        assert dut.sat_flag.value == 1 and dut.ovf_flag.value == 1
         tb.set_weights(MON_W)
 
     for at in (S_MAC, S_FIN, S_UPD):
@@ -450,8 +450,8 @@ async def test_reset_mid_operation(dut):
         await tb.until_state(at)
         await pulse_reset(tb)
         task.cancel()
-        dut.core_d_pre.value = 0
-        dut.core_d_stb.value = 0
+        dut.d_pre.value = 0
+        dut.d_stb.value = 0
         await check_clean_after_reset(tb, f"in state {at}")
 
 
@@ -473,18 +473,18 @@ async def test_flags_sticky(dut):
     tb.set_taps([-128] * 4)
     tb.set_weights([-8192] * 4)
     await tb.step(-128, 0)
-    assert (int(dut.core_sat_flag.value), int(dut.core_ovf_flag.value)) == (1, 0)
+    assert (int(dut.sat_flag.value), int(dut.ovf_flag.value)) == (1, 0)
     await clean_activity()
-    assert (int(dut.core_sat_flag.value), int(dut.core_ovf_flag.value)) == (1, 0), "sat_flag did not stay set"
+    assert (int(dut.sat_flag.value), int(dut.ovf_flag.value)) == (1, 0), "sat_flag did not stay set"
 
     # then ovf_flag
     await tb.send(1, 1)
     await tb.wait(5)
     await tb.send(2, 2)
     await tb.wait(STEP_CLK)
-    assert (int(dut.core_sat_flag.value), int(dut.core_ovf_flag.value)) == (1, 1)
+    assert (int(dut.sat_flag.value), int(dut.ovf_flag.value)) == (1, 1)
     await clean_activity()
-    assert (int(dut.core_sat_flag.value), int(dut.core_ovf_flag.value)) == (1, 1), "a flag did not stay set"
+    assert (int(dut.sat_flag.value), int(dut.ovf_flag.value)) == (1, 1), "a flag did not stay set"
 
     # ovf_flag alone, from reset
     await pulse_reset(tb)
@@ -492,12 +492,12 @@ async def test_flags_sticky(dut):
     await tb.wait(5)
     await tb.send(2, 2)
     await tb.wait(STEP_CLK)
-    assert (int(dut.core_sat_flag.value), int(dut.core_ovf_flag.value)) == (0, 1)
+    assert (int(dut.sat_flag.value), int(dut.ovf_flag.value)) == (0, 1)
     await clean_activity()
-    assert (int(dut.core_sat_flag.value), int(dut.core_ovf_flag.value)) == (0, 1), "ovf_flag did not stay set"
+    assert (int(dut.sat_flag.value), int(dut.ovf_flag.value)) == (0, 1), "ovf_flag did not stay set"
 
     await pulse_reset(tb)
-    assert (int(dut.core_sat_flag.value), int(dut.core_ovf_flag.value)) == (0, 0)
+    assert (int(dut.sat_flag.value), int(dut.ovf_flag.value)) == (0, 0)
 
 
 # ---------------- Weight monitor lane ----------------
@@ -594,7 +594,7 @@ async def test_monitor_dropped_samples(dut):
     got = [w for _, _, _, w in tb.outputs]
     assert len(got) == n_acc
     assert got == [mon(MON_W[n % 4]) for n in range(n_acc)], "weight index out of step after a drop"
-    assert dut.core_ovf_flag.value == 1
+    assert dut.ovf_flag.value == 1
 
 
 @cocotb.test()
@@ -612,8 +612,8 @@ async def test_monitor_reset(dut):
             await tb.until_state(at)
             await pulse_reset(tb)
             task.cancel()
-            dut.core_d_pre.value = 0
-            dut.core_d_stb.value = 0
+            dut.d_pre.value = 0
+            dut.d_stb.value = 0
             await tb.wait(2)
             tb.set_weights(MON_W)
             tb.outputs.clear()

@@ -28,14 +28,16 @@ jobs:
           cd test
           make clean
           make
-          # make will return success even if the test fails, so check for failure in the results.xml
-          test -f results.xml
-          ! grep failure results.xml
+          # make will return success even if the tests fail, so check for failure in both
+          # results files: core unit tests, and end-to-end + SPI unit tests
+          test -f results_core.xml && test -f results.xml
+          ! grep failure results_core.xml results.xml
 
       - name: Test Summary
         uses: test-summary/action@v2.4
         with:
           paths: |
+            test/results_core.xml
             test/results.xml
         if: always()
 
@@ -47,4 +49,5 @@ jobs:
           path: |
             test/tb.fst
             test/results.xml
+            test/results_core.xml
             test/output/*
