@@ -70,19 +70,19 @@ module tt_um_adaptive_filter (
     wire       tx_load, sat_flag, ovf_flag;
     wire [7:0] tx_a, tx_b, tx_c;
 
-    af_core u_core (
+    filter_core u_core (
         .clk      (clk),
-        .rst_n    (rst_n_s),
+        .rst      (~rst_n_s),
         .adapt_en (ctl_s2[0]),
         .mu_sel   (ctl_s2[3:1]),
         .d_pre    (d_pre),
         .d_stb    (d_stb),
         .d_u      (d_u),
         .d_r      (d_r),
-        .tx_load  (tx_load),
-        .tx_a     (tx_a),
-        .tx_b     (tx_b),
-        .tx_c     (tx_c),
+        .t_load   (tx_load),
+        .t_y      (tx_a),
+        .t_e      (tx_b),
+        .t_w      (tx_c),
         .sat_flag (sat_flag),
         .ovf_flag (ovf_flag)
     );

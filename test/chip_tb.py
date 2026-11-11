@@ -1,8 +1,9 @@
 """Bench for driving tt_um_adaptive_filter through its pins (see tb.v).
 
-The bench is the host: an SPI master on the input port (mode 0, MSB first,
+The bench is the host: an SPI master on the input port (mode 0, LSB first,
 CS active low, u and r on two lanes) and a frame-sync receiver on the output
-port (data captured on rising SCLK_OUT, FS_OUT high for the first bit). A
+port (LSB first, data captured on rising SCLK_OUT, FS_OUT low for the whole
+frame and high between frames). A
 frame is (y, e, w): w is the monitor weight, top 8 bits (Q2.6). Values are
 signed (-128 .. 127).
 
@@ -35,7 +36,8 @@ class ChipTB:
         self.dut = dut
         self.tclk_ps, self.tsclk_ps, self.gap = tclk_ps, tsclk_ps, gap
         self.frames = []                  # (y, e, w), signed; None for a lane with X
-        self.bad_frames = 0               # frames cut short by a new FS_OUT
+        self.bad_frames = 0               # frames cut short by FS_OUT rising
+        self._n = -1                      # bits received of the current frame; -1: none
         self.sent = 0
 
     async def start(self):
@@ -52,6 +54,7 @@ class ChipTB:
         Clock(d.clk, self.tclk_ps, "ps").start(start_high=False)
         cocotb.start_soon(self._sclk_in())
         cocotb.start_soon(self._receive())
+        cocotb.start_soon(self._frame_end())
 
     async def reset(self):
         await self.start()
@@ -67,22 +70,27 @@ class ChipTB:
 
     async def _receive(self):
         d = self.dut
-        n, ys, es, ws = -1, "", "", ""
+        ys, es, ws = "", "", ""
         while True:
             await RisingEdge(d.sclk_out)
-            if bit(d.fs_out) == "1":
-                if n > 0:
-                    self.bad_frames += 1
-                n, ys, es, ws = 0, "", "", ""
-            if n >= 0:
-                ys += bit(d.sdo_y)
-                es += bit(d.sdo_e)
-                ws += bit(d.sdo_w)
-                n += 1
-                if n == 8:
-                    self.frames.append(tuple(s8(int(b, 2)) if "x" not in b else None
-                                             for b in (ys, es, ws)))
-                    n = -1
+            if bit(d.fs_out) != "0" or self._n == 8:
+                continue                  # outside a frame, or this frame is complete
+            if self._n < 0:
+                self._n, ys, es, ws = 0, "", "", ""
+            ys += bit(d.sdo_y)
+            es += bit(d.sdo_e)
+            ws += bit(d.sdo_w)
+            self._n += 1
+            if self._n == 8:              # bits arrived LSB first
+                self.frames.append(tuple(s8(int(b[::-1], 2)) if "x" not in b else None
+                                         for b in (ys, es, ws)))
+
+    async def _frame_end(self):
+        while True:
+            await RisingEdge(self.dut.fs_out)
+            if 0 < self._n < 8:
+                self.bad_frames += 1
+            self._n = -1
 
     def set_ctl(self, adapt_en, mu_sel):
         """Control pins; they reach the core through 2-flop synchronizers."""
@@ -90,12 +98,12 @@ class ChipTB:
         self.dut.mu_sel.value = mu_sel
 
     async def send(self, u, r):
-        """One sample: CS low, 8 bits MSB first (data changes on falling
+        """One sample: CS low, 8 bits LSB first (data changes on falling
         SCLK_IN, the chip samples on rising), then CS high for `gap` periods."""
         d = self.dut
         await FallingEdge(d.sclk_in)
         d.cs_n.value = 0
-        for i in range(7, -1, -1):
+        for i in range(8):
             d.mosi_u.value = (u >> i) & 1
             d.mosi_r.value = (r >> i) & 1
             await FallingEdge(d.sclk_in)
@@ -108,7 +116,7 @@ class ChipTB:
         d = self.dut
         await FallingEdge(d.sclk_in)
         d.cs_n.value = 0
-        for i in range(7, 7 - bits, -1):
+        for i in range(bits):
             d.mosi_u.value = (u >> i) & 1
             d.mosi_r.value = (r >> i) & 1
             await FallingEdge(d.sclk_in)

@@ -66,13 +66,13 @@ def random_pairs(rng, n, lo=-128, hi=127):
 
 @cocotb.test()
 async def test_reset_pins(dut):
-    """After reset, with no samples: every output pin low (no SCLK_OUT, no
-    frame, flags clear) and every uio pin an input."""
+    """After reset, with no samples: FS_OUT high (no frame) and every other
+    output pin low (no SCLK_OUT, flags clear), and every uio pin an input."""
     tb = ChipTB(dut)
     await tb.reset()
     for _ in range(200):
         await ClockCycles(dut.clk, 1)
-        assert dut.uo_out.value == 0, f"uo_out {dut.uo_out.value} while idle"
+        assert dut.uo_out.value == 0b0000_0010, f"uo_out {dut.uo_out.value} while idle"
         assert dut.uio_oe.value == 0, f"uio_oe {dut.uio_oe.value}"
         assert dut.uio_out.value == 0, f"uio_out {dut.uio_out.value}"
     assert tb.frames == []

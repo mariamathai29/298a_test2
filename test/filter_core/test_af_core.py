@@ -57,7 +57,7 @@ async def test_reset(dut):
     assert tb.state() == S_IDLE
     assert tb.taps() == [0, 0, 0, 0]
     assert tb.weights() == [0, 0, 0, 0]
-    assert dut.tx_load.value == 0
+    assert dut.t_load.value == 0
     assert dut.sat_flag.value == 0
     assert dut.ovf_flag.value == 0
 
@@ -423,9 +423,9 @@ async def check_clean_after_reset(tb, where):
 
 
 async def pulse_reset(tb):
-    tb.dut.rst_n.value = 0
+    tb.dut.rst.value = 1
     await tb.wait(3)
-    tb.dut.rst_n.value = 1
+    tb.dut.rst.value = 0
     await tb.wait(1)
 
 

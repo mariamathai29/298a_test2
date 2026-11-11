@@ -10,14 +10,14 @@ SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(CURDIR)/../../src
 
-VERILOG_SOURCES = $(SRC_DIR)/af_core.v $(SRC_DIR)/ctl_ff.v
+VERILOG_SOURCES = $(SRC_DIR)/filter_core.v $(SRC_DIR)/ctl_ff.v
 COMPILE_ARGS   += -DAF_BEHAVIORAL_FF
 SIM_BUILD      ?= sim_build
 
 COCOTB_HDL_TIMEUNIT      = 1ns
 COCOTB_HDL_TIMEPRECISION = 1ps
 
-COCOTB_TOPLEVEL     = af_core
+COCOTB_TOPLEVEL     = filter_core
 COCOTB_TEST_MODULES = test_af_core
 
 include $(shell cocotb-config --makefiles)/Makefile.sim

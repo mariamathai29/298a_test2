@@ -13,9 +13,8 @@ project:
 
   source_files:
     - "tt_um_adaptive_filter.v"
-    - "af_core.v"
-    - "spi_rx.v"
-    - "spi_tx.v"
+    - "filter_core.v"
+    - "spi.v"
     - "ctl_ff.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.

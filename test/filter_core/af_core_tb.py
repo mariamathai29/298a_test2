@@ -36,7 +36,7 @@ class AfCoreTB:
     async def start(self):
         """Start clk with every input idle and the core in reset."""
         d = self.dut
-        d.rst_n.value = 0
+        d.rst.value = 1
         d.adapt_en.value = 0
         d.mu_sel.value = 0
         d.d_pre.value = 0
@@ -49,7 +49,7 @@ class AfCoreTB:
     async def reset(self, cycles=5):
         await self.start()
         await ClockCycles(self.dut.clk, cycles, rising=False)
-        self.dut.rst_n.value = 1
+        self.dut.rst.value = 0
         await FallingEdge(self.dut.clk)
 
     async def _monitor(self):
@@ -57,9 +57,9 @@ class AfCoreTB:
         while True:
             await FallingEdge(d.clk)
             self.cycle += 1
-            if d.tx_load.value == 1:
-                self.outputs.append((self.cycle, s8(d.tx_a.value), s8(d.tx_b.value),
-                                     s8(d.tx_c.value)))
+            if d.t_load.value == 1:
+                self.outputs.append((self.cycle, s8(d.t_y.value), s8(d.t_e.value),
+                                     s8(d.t_w.value)))
 
     async def wait(self, cycles):
         await ClockCycles(self.dut.clk, cycles, rising=False)
@@ -98,7 +98,7 @@ class AfCoreTB:
 
     # ---------------- White-box reads ----------------
     def state(self):
-        return int(self.dut.state.value)
+        return int(self.dut.cur.value)
 
     def taps(self):
         return [s8(self.dut.x[k].value) for k in range(4)]
@@ -146,9 +146,9 @@ class AfCoreTB:
             "cycle":   self.cycle,
             "state":   self.state(),
             "cnt":     int(d.cnt.value),
-            "go":      [int(d.go_xs.value[i]) for i in range(2)] + [int(d.go_a.value), int(d.go_f.value)],
+            "go":      [int(d.go_x.value[i]) for i in range(2)] + [int(d.go_a.value), int(d.go_f.value)],
             "rot":     [int(d.rot_x.value[i]) for i in range(2)] + [int(d.rot_w.value[i]) for i in range(4)],
-            "tx_load": int(d.tx_load.value),
+            "tx_load": int(d.t_load.value),
             "x":       self.taps(),
             "w":       self.weights(),
         }
