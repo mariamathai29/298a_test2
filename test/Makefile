@@ -69,8 +69,14 @@ COMPILE_ARGS 		+= -I$(SRC_DIR)
 VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 
-# List test modules to run, separated by commas and without the .py suffix:
+# List test modules to run, separated by commas and without the .py suffix.
+# RTL also runs the SPI unit tests (instances at the end of tb.v); the
+# gate-level netlist has no separate spi_transmit / spi_receive.
+ifneq ($(GATES),yes)
+COCOTB_TEST_MODULES = test,test_spi_unit
+else
 COCOTB_TEST_MODULES = test
+endif
 
 endif
 

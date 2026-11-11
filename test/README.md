@@ -40,6 +40,12 @@ This will generate `tb.vcd` instead of `tb.fst`.
 interface, against the golden model `filter_golden.py`. Plain `make` runs them first; their results go
 to `results_core.xml`. The gate-level run (`GATES=yes`) skips them: the netlist has no separate core.
 
+## SPI unit tests
+
+`test_spi_unit.py` tests `spi_transmit` and `spi_receive` on their own and connected back to back
+(transmitter into receiver), using separate instances at the end of `tb.v`. They run in the RTL
+simulation together with the end-to-end tests (results in `results.xml`), and not at gate level.
+
 ## How to view the waveform file
 
 Using GTKWave
