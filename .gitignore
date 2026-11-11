@@ -12,4 +12,3 @@ test/__pycache__/
 test/results.xml
 test/gate_level_netlist.v
 **/__pycache__/
-test/results_core.xml

@@ -10,13 +10,13 @@ See below to get started or for more information, check the [website](https://ti
 
 ## How to run
 
-To run the RTL simulation (the core unit tests, then the end-to-end tests):
+To run the RTL simulation (end-to-end tests, then the SPI and core unit tests):
 
 ```sh
 make -B
 ```
 
-`make SUITE=core` runs only the core unit tests and `make SUITE=e2e` only the end-to-end tests.
+To run one test module only, e.g. the core unit tests: `make -B COCOTB_TEST_MODULES=test_af_core`.
 
 To run gatelevel simulation, first harden your project and copy `../runs/wokwi/results/final/verilog/gl/{your_module_name}.v` to `gate_level_netlist.v`.
 
@@ -37,8 +37,9 @@ This will generate `tb.vcd` instead of `tb.fst`.
 ## Core unit tests
 
 `test_af_core.py` (bench: `af_core_tb.py`) tests `filter_core` directly at its ports, without the SPI
-interface, against the golden model `filter_golden.py`. Plain `make` runs them first; their results go
-to `results_core.xml`. The gate-level run (`GATES=yes`) skips them: the netlist has no separate core.
+interface, against the golden model `filter_golden.py`. It drives a separate core instance at the end
+of `tb.v` (`u_core`, signals `core_*`). Like the SPI unit tests it runs in the RTL simulation (results
+in `results.xml`), and not at gate level: the netlist has no separate core.
 
 ## SPI unit tests
 

@@ -1,9 +1,12 @@
-"""Bench for driving af_core directly at its ports.
+"""Bench for driving filter_core directly at its ports.
+
+The core is the separate instance u_core in tb.v (RTL only): its ports are
+the tb signals core_<port>, and white-box reads go through dut.u_core.
 
 Inputs are driven, and outputs sampled, on the falling edge of clk, half a
 cycle away from the rising edge the core acts on, so there are no races.
 
-An output is one tx_load pulse at the end of a step: (tx_a, tx_b, tx_c) =
+An output is one t_load pulse at the end of a step: (t_y, t_e, t_w) =
 (y, e, monitor weight top 8 bits). Outputs are recorded signed (-128 .. 127),
 like every value the tests compare.
 """
@@ -30,26 +33,27 @@ def s14(v):
 class AfCoreTB:
     def __init__(self, dut):
         self.dut = dut
+        self.core = dut.u_core            # white-box reads
         self.cycle = 0                    # falling edges since start()
         self.outputs = []                 # (cycle, y, e, w), signed
 
     async def start(self):
         """Start clk with every input idle and the core in reset."""
         d = self.dut
-        d.rst.value = 1
-        d.adapt_en.value = 0
-        d.mu_sel.value = 0
-        d.d_pre.value = 0
-        d.d_stb.value = 0
-        d.d_u.value = 0
-        d.d_r.value = 0
+        d.core_rst.value = 1
+        d.core_adapt_en.value = 0
+        d.core_mu_sel.value = 0
+        d.core_d_pre.value = 0
+        d.core_d_stb.value = 0
+        d.core_d_u.value = 0
+        d.core_d_r.value = 0
         Clock(d.clk, TCLK_NS, "ns").start(start_high=False)
         cocotb.start_soon(self._monitor())
 
     async def reset(self, cycles=5):
         await self.start()
         await ClockCycles(self.dut.clk, cycles, rising=False)
-        self.dut.rst.value = 0
+        self.dut.core_rst.value = 0
         await FallingEdge(self.dut.clk)
 
     async def _monitor(self):
@@ -57,9 +61,9 @@ class AfCoreTB:
         while True:
             await FallingEdge(d.clk)
             self.cycle += 1
-            if d.t_load.value == 1:
-                self.outputs.append((self.cycle, s8(d.t_y.value), s8(d.t_e.value),
-                                     s8(d.t_w.value)))
+            if d.core_t_load.value == 1:
+                self.outputs.append((self.cycle, s8(d.core_t_y.value), s8(d.core_t_e.value),
+                                     s8(d.core_t_w.value)))
 
     async def wait(self, cycles):
         await ClockCycles(self.dut.clk, cycles, rising=False)
@@ -68,14 +72,14 @@ class AfCoreTB:
         """Present one sample as the SPI receiver does: d_u / d_r held (they
         stay until the next sample), d_pre for one cycle, then d_stb."""
         d = self.dut
-        d.d_u.value = u & 0xFF
-        d.d_r.value = r & 0xFF
-        d.d_pre.value = 1
+        d.core_d_u.value = u & 0xFF
+        d.core_d_r.value = r & 0xFF
+        d.core_d_pre.value = 1
         await FallingEdge(d.clk)
-        d.d_pre.value = 0
-        d.d_stb.value = 1
+        d.core_d_pre.value = 0
+        d.core_d_stb.value = 1
         await FallingEdge(d.clk)
-        d.d_stb.value = 0
+        d.core_d_stb.value = 0
 
     async def send_schedule(self, samples):
         """Present samples on a cycle schedule: (t, u, r) puts d_pre on cycle t
@@ -85,36 +89,36 @@ class AfCoreTB:
         d = self.dut
         for c in range(max(pre) + 2):
             if c in pre:
-                d.d_u.value = pre[c][0] & 0xFF
-                d.d_r.value = pre[c][1] & 0xFF
-            d.d_pre.value = int(c in pre)
-            d.d_stb.value = int(c - 1 in pre)
+                d.core_d_u.value = pre[c][0] & 0xFF
+                d.core_d_r.value = pre[c][1] & 0xFF
+            d.core_d_pre.value = int(c in pre)
+            d.core_d_stb.value = int(c - 1 in pre)
             await FallingEdge(d.clk)
-        d.d_stb.value = 0
+        d.core_d_stb.value = 0
 
     def set_ctl(self, adapt_en, mu_sel):
-        self.dut.adapt_en.value = adapt_en
-        self.dut.mu_sel.value = mu_sel
+        self.dut.core_adapt_en.value = adapt_en
+        self.dut.core_mu_sel.value = mu_sel
 
     # ---------------- White-box reads ----------------
     def state(self):
-        return int(self.dut.cur.value)
+        return int(self.core.cur.value)
 
     def taps(self):
-        return [s8(self.dut.x[k].value) for k in range(4)]
+        return [s8(self.core.x[k].value) for k in range(4)]
 
     def weights(self):
-        return [s14(self.dut.w[k].value) for k in range(4)]
+        return [s14(self.core.w[k].value) for k in range(4)]
 
     def set_weights(self, w):
         """Deposit weights (Q2.12) into the ring; they hold until it rotates."""
         for k in range(4):
-            self.dut.w[k].value = w[k] & 0x3FFF
+            self.core.w[k].value = w[k] & 0x3FFF
 
     def set_taps(self, x):
         """Deposit taps (Q1.7) into the delay line; x[0] = newest."""
         for k in range(4):
-            self.dut.x[k].value = x[k] & 0xFF
+            self.core.x[k].value = x[k] & 0xFF
 
     async def until_state(self, s, limit=100):
         """Wait for a falling edge in a cycle where the FSM is in state s."""
@@ -141,7 +145,7 @@ class AfCoreTB:
 
     def snapshot(self):
         """Every control and both rings, as seen during the current cycle."""
-        d = self.dut
+        d = self.core
         return {
             "cycle":   self.cycle,
             "state":   self.state(),

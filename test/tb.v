@@ -3,7 +3,8 @@
 
 /* This testbench just instantiates the module and makes some convenient wires
    that can be driven / tested by the cocotb test.py (and, RTL only, separate
-   SPI instances for test_spi_unit.py: see the end of the file).
+   instances for the unit tests test_af_core.py and test_spi_unit.py: see the
+   end of the file).
 
    Each pin the tests use has its own name:
      inputs  sclk_in, cs_n, mosi_u, mosi_r   SPI input port   -> ui_in[0], [1], [2], [4]
@@ -65,6 +66,42 @@ module tb ();
   );
 
 `ifndef GL_TEST
+  // ===========================================================================
+  // Unit-test instance for src/filter_core.v (used by test_af_core.py).
+  // RTL only: the gate-level netlist no longer contains this module.
+  // It shares `clk` with the top-level design and is otherwise independent.
+  // ===========================================================================
+  reg        core_rst;
+  reg        core_adapt_en;
+  reg  [2:0] core_mu_sel;
+  reg        core_d_pre;
+  reg        core_d_stb;
+  reg  [7:0] core_d_u;
+  reg  [7:0] core_d_r;
+  wire       core_t_load;
+  wire [7:0] core_t_y;
+  wire [7:0] core_t_e;
+  wire [7:0] core_t_w;
+  wire       core_sat_flag;
+  wire       core_ovf_flag;
+
+  filter_core u_core (
+      .clk     (clk),
+      .rst     (core_rst),
+      .adapt_en(core_adapt_en),
+      .mu_sel  (core_mu_sel),
+      .d_pre   (core_d_pre),
+      .d_stb   (core_d_stb),
+      .d_u     (core_d_u),
+      .d_r     (core_d_r),
+      .t_load  (core_t_load),
+      .t_y     (core_t_y),
+      .t_e     (core_t_e),
+      .t_w     (core_t_w),
+      .sat_flag(core_sat_flag),
+      .ovf_flag(core_ovf_flag)
+  );
+
   // ===========================================================================
   // Unit-test instances for src/spi.v (used by test_spi_unit.py).
   // RTL only: the gate-level netlist no longer contains these modules.
