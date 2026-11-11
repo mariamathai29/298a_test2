@@ -32,6 +32,17 @@ make -B FST=
 
 This will generate `tb.vcd` instead of `tb.fst`.
 
+## Core unit tests
+
+`test_af_core.py` (bench: `af_core_tb.py`) tests `filter_core` directly at its ports, without the SPI
+interface, against the golden model `filter_golden.py`. It has its own makefile:
+
+```sh
+make -f Makefile.core
+```
+
+Results go to `results_core.xml`.
+
 ## How to view the waveform file
 
 Using GTKWave

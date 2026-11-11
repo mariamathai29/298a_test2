@@ -25,11 +25,11 @@ jobs:
 
       - name: Run filter_core unit tests
         run: |
-          cd test/filter_core
-          make clean
-          make
-          # make will return success even if the test fails, so check for failure in the results.xml
-          ! grep failure results.xml
+          cd test
+          make -f Makefile.core clean
+          make -f Makefile.core
+          # make will return success even if the test fails, so check for failure in the results file
+          ! grep failure results_core.xml
 
       - name: Run tests
         if: success() || failure()
@@ -44,7 +44,7 @@ jobs:
         uses: test-summary/action@v2.4
         with:
           paths: |
-            test/filter_core/results.xml
+            test/results_core.xml
             test/results.xml
         if: always()
 
@@ -56,5 +56,5 @@ jobs:
           path: |
             test/tb.fst
             test/results.xml
-            test/filter_core/results.xml
+            test/results_core.xml
             test/output/*
