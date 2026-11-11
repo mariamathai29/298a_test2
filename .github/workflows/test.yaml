@@ -23,22 +23,15 @@ jobs:
         shell: bash
         run: pip install -r test/requirements.txt
 
-      - name: Run filter_core unit tests
-        run: |
-          cd test
-          make -f Makefile.core clean
-          make -f Makefile.core
-          # make will return success even if the test fails, so check for failure in the results file
-          ! grep failure results_core.xml
-
       - name: Run tests
-        if: success() || failure()
         run: |
           cd test
           make clean
           make
-          # make will return success even if the test fails, so check for failure in the results.xml
-          ! grep failure results.xml
+          # make will return success even if the tests fail, so check for failure in both
+          # results files: core unit tests and end-to-end tests
+          test -f results_core.xml && test -f results.xml
+          ! grep failure results_core.xml results.xml
 
       - name: Test Summary
         uses: test-summary/action@v2.4
