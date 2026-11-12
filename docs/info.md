@@ -14,8 +14,8 @@ interference cancellation: the reference `u` feeds the FIR, the desired input `r
 correlated interference, and the chip outputs `y` and the error `e = r - y` (the cleaned signal). The
 same structure identifies an unknown 4-tap FIR when `r` is that system's response to `u`.
 
-- Samples `u`, `r` and outputs `y`, `e` are signed Q1.7. Weights are 14-bit Q2.12 registers; the FIR
-  uses the top 10 bits (Q2.8).
+- Samples `u`, `r` and outputs `y`, `e` are signed Q1.7. Weights are 14-bit Q2.12 registers, used at
+  full precision by the FIR.
 - Update: `w[k] += mu * sign(e) * sign(x[k])`, with `mu = 2^(mu_sel - 12)` (`mu_sel` 0 to 7).
 - Input port: SPI slave (mode 0, LSB first, `CS_IN` active low) on its own clock `SCLK_IN`. `u` and `r`
   shift in on two lanes; after the 8th bit both words move into holding registers, and a toggle
