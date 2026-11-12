@@ -1,6 +1,6 @@
 N_TAPS = 4
 W_BITS = 14        # weight register width, Q2.12
-W_EXT = 4          # extra fractional bits below the FIR's Q2.8
+W_EXT = 4          # Q2.12 weight vs the Q2.8 load/readout format
 MU_Q_DEFAULT = 1   # mu = 2^-12
 
 MODE_IC = 0b000      # interference cancellation (must work)
@@ -54,15 +54,15 @@ class AdaptiveFilter:
     def step(self, u, r=0, e_in=0):
         check(u, 8, "u"); check(r, 8, "r"); check(e_in, 8, "e_in")
 
-        # Shift delay line, then FIR over x[n]..x[n-7]
+        # Shift delay line, then FIR over x[n]..x[n-3], full Q2.12 weights
         self.x = [u] + self.x[:-1]
         acc = 0
         for k in range(N_TAPS):
-            acc += check(self.x[k] * (self.w[k] >> W_EXT), 18, "product")
-        check(acc, 21, "acc")
+            acc += check(self.x[k] * self.w[k], 22, "product")
+        check(acc, 24, "acc")
 
-        # Q6.15 -> Q1.7: round half up (add 2^7, drop 8 LSBs), saturate to 8 bits
-        y, s1 = sat((acc + (1 << 7)) >> 8, 8)
+        # Q5.19 -> Q1.7: round half up (add 2^11, drop 12 LSBs), saturate to 8 bits
+        y, s1 = sat((acc + (1 << 11)) >> 12, 8)
 
         if self.mode & 0b100:            # external error (debug)
             e_cue = e_in

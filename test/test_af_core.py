@@ -128,7 +128,7 @@ async def test_step_timing(dut):
 
 
 # Weight register values (Q2.12) for the single-tap sweep. The multiplier uses
-# w[13:4] (Q2.8): 15 has only the ignored low bits set, and -1 truncates to -1.
+# all 14 bits: 15 has only the low 4 bits set, -1 has every bit set.
 W_SWEEP = [0, 16, -16, 15, -1, 8191, -8192, 1234, -3001, 4096, -4096]
 
 
@@ -151,13 +151,16 @@ async def test_mac_single_tap(dut):
 
 @cocotb.test()
 async def test_rounding(dut):
-    """y = round half up of acc / 2^8: x = +-1 against every multiplier weight
-    (w[13:4] = -512 .. 511) puts acc on and around every rounding boundary."""
+    """y = round half up of acc / 2^12: x = +-1 against weights across the
+    whole range (top 10 bits stepped, low 4 bits random) and on and either
+    side of every rounding boundary (w = +-2048, +-6144)."""
     tb = AfCoreTB(dut)
     await tb.reset()
+    rng = random.Random(2)
+    edges = [b + d for b in (-6144, -2048, 2048, 6144) for d in (-1, 0, 1)]
     for xv in (1, -1):
-        for wm in range(-512, 512):
-            await check_step(tb, [xv, 0, 0, 0], [wm << 4, 0, 0, 0], 0)
+        for wv in [(wm << 4) | rng.randint(0, 15) for wm in range(-512, 512)] + edges:
+            await check_step(tb, [xv, 0, 0, 0], [wv, 0, 0, 0], 0)
 
 
 @cocotb.test()
