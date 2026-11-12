@@ -68,9 +68,8 @@ async def test_step_timing(dut):
     """One step, cycle by cycle: go, MAC x 17, FIN, UPD x 4, then idle.
 
     The rings rotate 20 times (MAC 0-15, UPD 0-3) and end in their starting
-    order; tx_load pulses once, on the first UPD cycle. Every replicated copy
-    of go and rot agrees in every cycle. The tap and weight at position 0 are
-    the ones each MAC issue and UPD cycle should use.
+    order; tx_load pulses once, on the first UPD cycle. The tap and weight at
+    position 0 are the ones each MAC issue and UPD cycle should use.
     """
     tb = AfCoreTB(dut)
     await tb.reset()
@@ -90,15 +89,10 @@ async def test_step_timing(dut):
     await tb.send(u, 0)
     rows = await tracer
 
-    # Replicated controls agree
-    for row in rows:
-        assert len(set(row["go"])) == 1, f"go copies disagree: {row}"
-        assert len(set(row["rot"])) == 1, f"rot copies disagree: {row}"
-
     # The step starts on the go cycle
-    first = next(i for i, row in enumerate(rows) if row["go"][0])
+    first = next(i for i, row in enumerate(rows) if row["go"])
     step = rows[first:first + STEP_CLK]
-    assert sum(row["go"][0] for row in rows) == 1, "go must pulse once"
+    assert sum(row["go"] for row in rows) == 1, "go must pulse once"
 
     expect = ([(S_IDLE, None)] + [(S_MAC, k) for k in range(17)] +
               [(S_FIN, None)] + [(S_UPD, k) for k in range(4)])
@@ -108,9 +102,9 @@ async def test_step_timing(dut):
     assert rows[first + STEP_CLK]["state"] == S_IDLE, "not idle after 23 clk"
 
     # 20 rotations, in MAC 0-15 and UPD 0-3 only
-    rot = [row["rot"][0] for row in step]
+    rot = [row["rot"] for row in step]
     assert rot == [0] + [1] * 16 + [0, 0] + [1] * 4, f"rot pattern {rot}"
-    assert sum(row["rot"][0] for row in rows) == 20
+    assert sum(row["rot"] for row in rows) == 20
 
     # tx_load once, on UPD 0
     loads = [i for i, row in enumerate(rows) if row["tx_load"]]
